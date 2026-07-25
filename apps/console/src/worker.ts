@@ -152,10 +152,36 @@ function gatedConsole(): Response {
   );
 }
 
+// Analytics config is a static asset, so a build that forgot to blank it — or a
+// manual `wrangler deploy --env beta` that skipped the beta build script — would
+// ship the production PostHog key and GA4 id to a pre-production host. That
+// happened twice, so the guarantee now lives here, where no build step can
+// bypass it: any non-production hostname gets a blanked config regardless of what
+// is sitting in dist/.
+export function isPreProductionHost(hostname: string): boolean {
+  return hostname !== "eventforge.dev" && hostname !== "www.eventforge.dev";
+}
+
+const disabledAnalyticsConfig = JSON.stringify({
+  posthogKey: "",
+  posthogHost: "",
+  gaMeasurementId: "",
+});
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (isConsolePath(url.pathname)) return gatedConsole();
+
+    if (url.pathname === "/analytics-config.json" && isPreProductionHost(url.hostname)) {
+      return new Response(disabledAnalyticsConfig, {
+        headers: {
+          ...securityHeaders,
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        },
+      });
+    }
 
     if (url.pathname === "/robots.txt") {
       return new Response(robotsTxt, {
