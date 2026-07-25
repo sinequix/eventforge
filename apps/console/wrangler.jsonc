@@ -37,6 +37,11 @@
           "custom_domain": true,
         },
       ],
+      // /api/* is proxied to the pre-production API worker so the browser sees a
+      // same-origin request and the session cookie stays SameSite=Strict.
+      "vars": {
+        "API_ORIGIN": "https://eventforge-cloud-preview.jorge-b9f.workers.dev",
+      },
     },
   },
 }

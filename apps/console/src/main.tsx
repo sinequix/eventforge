@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import ConsoleGate from "./ConsoleGate";
 import FeaturesPage from "./FeaturesPage";
 import LandingPage from "./LandingPage";
 import WaitlistPage from "./WaitlistPage";
@@ -49,7 +49,7 @@ registerWebMcpTool();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {isConsoleRoute ? (
-      <App />
+      <ConsoleGate />
     ) : isWaitlistRoute ? (
       <WaitlistPage />
     ) : isFeaturesRoute ? (

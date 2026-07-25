@@ -4,6 +4,9 @@ interface AssetsBinding {
 
 interface Env {
   ASSETS: AssetsBinding;
+  // Pre-production only. When set, /api/* is proxied here so the browser sees a
+  // same-origin request and the session cookie can stay SameSite=Strict.
+  API_ORIGIN?: string;
 }
 
 const securityHeaders = {
@@ -171,7 +174,26 @@ const disabledAnalyticsConfig = JSON.stringify({
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (isConsolePath(url.pathname)) return gatedConsole();
+
+    // Same-origin proxy for the auth/API surface. Keeping this on the console
+    // origin is what lets the session cookie be SameSite=Strict instead of a
+    // cross-site None cookie.
+    if (url.pathname.startsWith("/api/") && isPreProductionHost(url.hostname) && env.API_ORIGIN) {
+      const upstream = new URL(url.pathname + url.search, env.API_ORIGIN);
+      const proxied = new Request(upstream, request);
+      proxied.headers.set("x-forwarded-host", url.hostname);
+      return fetch(proxied);
+    }
+
+    // The hosted console is open on pre-production hosts only. Production stays
+    // closed until hosted auth passes its own release gates.
+    if (isConsolePath(url.pathname)) {
+      if (!isPreProductionHost(url.hostname)) return gatedConsole();
+      // Pass the original request: `not_found_handling: single-page-application`
+      // serves index.html for /console. Fetching /index.html directly would be
+      // redirected to / by the assets binding.
+      return env.ASSETS.fetch(request);
+    }
 
     if (url.pathname === "/analytics-config.json" && isPreProductionHost(url.hostname)) {
       return new Response(disabledAnalyticsConfig, {

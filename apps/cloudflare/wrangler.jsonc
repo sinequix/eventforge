@@ -17,6 +17,8 @@
     "CANARY_WORKSPACE_ID": "eventforge-canary",
     "CANARY_PROJECT_ID": "eventforge-canary",
     "CANARY_ENVIRONMENT_ID": "00000000-0000-4000-8000-000000000001",
+    "AUTH_MAIL_FROM": "no-reply@mail.eventforge.dev",
+    "AUTH_CONSOLE_ORIGIN": "https://beta.eventforge.dev",
   },
   "secrets": {
     "required": ["CANARY_WEBHOOK_SECRET", "PAYLOAD_MASTER_KEY", "WAITLIST_RATE_LIMIT_SECRET"],
@@ -36,6 +38,10 @@
     },
   ],
   "r2_buckets": [{ "binding": "PAYLOADS", "bucket_name": "eventforge-payloads-preview" }],
+  // Hosted sign-in on the pre-production surface sends its verification links
+  // through Cloudflare Email Sending. mail.eventforge.dev is onboarded for
+  // sending; production intentionally has no binding because auth stays gated there.
+  "send_email": [{ "name": "EMAIL" }],
   "durable_objects": {
     "bindings": [{ "name": "IDENTITY_AUTHORITY", "class_name": "SessionAuthority" }],
   },

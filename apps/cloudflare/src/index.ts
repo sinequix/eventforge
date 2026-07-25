@@ -1,3 +1,4 @@
+import { handleAuth } from "./auth-routes.js";
 import { encryptPayload, sha256, verifyHmac } from "./crypto.js";
 import {
   DELIVERY_LEASE_MS,
@@ -556,6 +557,12 @@ export default {
         url.pathname === "/webhooks/canary"
       )
         return ingestCanary(request, env);
+      // Hosted sign-in is enabled on pre-production surfaces only. Production
+      // stays deliberately closed until it passes its own release gates, so the
+      // first real callers of these paths are beta operators, not customers.
+      if (surface === "preview" && url.pathname.startsWith("/api/auth/"))
+        return handleAuth(request, env, url);
+
       if (
         (surface === "api" || surface === "preview") &&
         (url.pathname.startsWith("/v1/") || url.pathname.startsWith("/api/auth/"))
