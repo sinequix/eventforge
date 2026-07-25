@@ -78,6 +78,10 @@ const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
     <loc>https://eventforge.dev/</loc>
     <changefreq>weekly</changefreq>
   </url>
+  <url>
+    <loc>https://eventforge.dev/features</loc>
+    <changefreq>weekly</changefreq>
+  </url>
 </urlset>
 `;
 

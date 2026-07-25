@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Mark } from "./Mark";
 import {
   ArrowUpRight,
   Asterisk,
@@ -55,7 +56,7 @@ const capabilities = [
     text: "Keep delivery history, issue context, evidence, and the approval trail together. Recover a cohort deliberately instead of clicking retry until it works.",
     icon: RotateCcw,
     tone: "violet",
-    status: "Roadmap",
+    status: "Foundation shipped",
   },
   {
     label: "04 / React",
@@ -63,7 +64,7 @@ const capabilities = [
     text: "Let diagnostic agents investigate first. Promote reversible reactions only through versioned policy, explicit approval, budgets, and post-action verification.",
     icon: ShieldCheck,
     tone: "orange",
-    status: "Roadmap",
+    status: "Foundation shipped",
   },
 ];
 
@@ -226,10 +227,6 @@ const principles = [
   },
 ];
 
-function Mark() {
-  return <img className="ef-mark" src="/eventforge-mark.svg" alt="" aria-hidden="true" />;
-}
-
 function TraceBoard() {
   return (
     <div className="ef-trace-board" aria-label="A sample EventForge event inbox">
@@ -320,6 +317,7 @@ export default function LandingPage() {
         </a>
         <nav aria-label="Primary navigation">
           <a href="#product">Product</a>
+          <a href="/features">Features</a>
           <a href="#pricing">Pricing</a>
           <a href={CONFIGURATION_GUIDE} target="_blank" rel="noreferrer">
             Docs
@@ -472,6 +470,11 @@ export default function LandingPage() {
             </article>
           ))}
         </div>
+        <p className="ef-capabilities-note">
+          &ldquo;Foundation shipped&rdquo; means the contracts and fail-closed gates are implemented
+          and tested, but no hosted path calls them yet.{" "}
+          <a href="/features">See all 24 capabilities and their status →</a>
+        </p>
         <div className="ef-surface-row">
           <span>Equal operating surfaces</span>
           <strong>API</strong>

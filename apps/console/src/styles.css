@@ -2192,3 +2192,235 @@ body {
     line-height: 1.75;
   }
 }
+
+/* ── Features page ───────────────────────────────────────────────────────────
+   Reuses the .ef-landing scope for tokens (ink/paper/mint/signal), so the
+   features route stays visually identical to the overview without duplicating
+   the palette. Tone accents mirror .ef-capability--* one-for-one. */
+.ef-features {
+  overflow-x: hidden;
+}
+.ef-features-hero {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  padding: 56px 32px 72px;
+}
+.ef-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 34px;
+  color: var(--paper-muted);
+  font-family: "Courier New", monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.ef-back-link:hover {
+  color: var(--mint);
+}
+.ef-features-hero h1 {
+  margin: 18px 0 0;
+  font-size: clamp(40px, 5.4vw, 78px);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  color: var(--paper);
+}
+.ef-features-hero h1 em {
+  font-style: normal;
+  color: var(--mint);
+}
+.ef-features-lead {
+  max-width: 62ch;
+  margin: 26px 0 0;
+  color: var(--paper-muted);
+  font-size: clamp(15px, 1.1vw, 17px);
+  line-height: 1.68;
+}
+
+/* Status legend. Published on the page so a reader can calibrate the badges
+   instead of assuming every listed capability is shippable today. */
+.ef-maturity-key {
+  display: grid;
+  gap: 1px;
+  margin: 44px 0 0;
+  padding: 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.ef-maturity-key-item {
+  padding: 20px 22px 22px;
+  background: var(--ink);
+}
+.ef-maturity-key dt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Courier New", monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ef-maturity-key dd {
+  margin: 12px 0 0;
+  color: var(--paper-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ef-maturity-count {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+}
+.ef-maturity--available {
+  color: var(--mint);
+}
+.ef-maturity--foundation {
+  color: #c6b8ff;
+}
+.ef-maturity--planned {
+  color: var(--slate);
+}
+
+.ef-feature-stage {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  padding: 46px 32px 10px;
+  border-top: 1px solid var(--line);
+}
+.ef-feature-stage-head {
+  max-width: 68ch;
+}
+.ef-feature-stage-head h2 {
+  margin: 16px 0 0;
+  font-size: clamp(28px, 2.6vw, 40px);
+  letter-spacing: -0.045em;
+  color: var(--paper);
+}
+.ef-feature-stage-head p {
+  margin: 14px 0 0;
+  color: var(--paper-muted);
+  font-size: 15px;
+  line-height: 1.66;
+}
+.ef-feature-grid {
+  display: grid;
+  gap: 1px;
+  margin: 34px 0 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  grid-template-columns: repeat(auto-fit, minmax(272px, 1fr));
+}
+.ef-feature {
+  display: flex;
+  flex-direction: column;
+  padding: 22px 22px 26px;
+  background: var(--ink);
+}
+.ef-feature-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ef-feature--mint .ef-feature-topline > svg {
+  color: var(--mint);
+}
+.ef-feature--signal .ef-feature-topline > svg {
+  color: var(--signal);
+}
+.ef-feature--violet .ef-feature-topline > svg {
+  color: #c6b8ff;
+}
+.ef-feature--orange .ef-feature-topline > svg {
+  color: #ffb18f;
+}
+.ef-feature-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: "Courier New", monospace;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.ef-feature h3 {
+  margin: 26px 0 0;
+  color: var(--paper);
+  font-size: 19px;
+  letter-spacing: -0.035em;
+}
+.ef-feature p {
+  margin: 12px 0 0;
+  color: var(--paper-muted);
+  font-size: 13.5px;
+  line-height: 1.62;
+}
+
+.ef-features-close {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  padding: 78px 32px 88px;
+  border-top: 1px solid var(--line);
+}
+.ef-features-close h2 {
+  margin: 0;
+  font-size: clamp(32px, 3.4vw, 52px);
+  line-height: 1.02;
+  letter-spacing: -0.05em;
+  color: var(--paper);
+}
+.ef-features-close h2 em {
+  font-style: normal;
+  color: var(--mint);
+}
+.ef-features-close p {
+  max-width: 60ch;
+  margin: 22px 0 0;
+  color: var(--paper-muted);
+  font-size: 15px;
+  line-height: 1.66;
+}
+.ef-features-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  margin: 34px 0 0;
+}
+
+@media (max-width: 720px) {
+  .ef-features-hero,
+  .ef-feature-stage,
+  .ef-features-close {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .ef-feature-grid,
+  .ef-maturity-key {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Caption under the landing capability grid. Explains the status badges rather
+   than letting "Foundation shipped" read as a synonym for "done". */
+.ef-capabilities-note {
+  margin: 26px 0 0;
+  max-width: 74ch;
+  color: var(--paper-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.ef-capabilities-note a {
+  color: var(--mint);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ef-capabilities-note a:hover {
+  text-decoration: underline;
+}

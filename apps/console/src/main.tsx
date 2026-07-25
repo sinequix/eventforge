@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import FeaturesPage from "./FeaturesPage";
 import LandingPage from "./LandingPage";
 import WaitlistPage from "./WaitlistPage";
 import { initializeAnalytics } from "./analytics";
@@ -40,12 +41,21 @@ const isConsoleRoute =
   window.location.pathname === "/console" ||
   window.location.pathname.startsWith("/console/");
 const isWaitlistRoute = window.location.pathname === "/waitlist";
+const isFeaturesRoute = window.location.pathname === "/features";
 applyTheme(getInitialTheme());
 void initializeAnalytics();
 registerWebMcpTool();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {isConsoleRoute ? <App /> : isWaitlistRoute ? <WaitlistPage /> : <LandingPage />}
+    {isConsoleRoute ? (
+      <App />
+    ) : isWaitlistRoute ? (
+      <WaitlistPage />
+    ) : isFeaturesRoute ? (
+      <FeaturesPage />
+    ) : (
+      <LandingPage />
+    )}
   </StrictMode>,
 );
