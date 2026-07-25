@@ -2529,3 +2529,24 @@ body {
 .ef-signin-foot a {
   color: var(--mint);
 }
+.ef-signin-captcha {
+  margin-top: 18px;
+  min-height: 65px;
+}
+.ef-signin-link {
+  display: block;
+  margin: 18px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mint);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ef-signin-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

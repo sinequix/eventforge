@@ -1,4 +1,10 @@
 import { type IdentityRole, normalizeIdentityEmail } from "./identity.js";
+import {
+  type PasswordRecord,
+  lockStateFor,
+  nextFailureState,
+  verifyPassword,
+} from "./passwords.js";
 import { type AuthoritySession, sessionAuthorityFor } from "./session-authority.js";
 
 // Hosted passwordless sign-in for the pre-production surface.
@@ -20,6 +26,7 @@ const SESSION_TTL_MS = 12 * 60 * 60_000;
 
 export type AuthEnv = {
   CONTROL_DB: D1Database;
+  TURNSTILE_SECRET?: string;
   IDENTITY_AUTHORITY: { getByName(name: string): SessionAuthorityStub };
   EMAIL?: { send(message: EmailMessage): Promise<unknown> };
   ENVIRONMENT: string;
@@ -383,4 +390,126 @@ export async function revokeSession(
   sessionId: string,
 ): Promise<void> {
   await sessionAuthorityFor<SessionAuthorityStub>(env, identityId).revoke(sessionId);
+}
+
+export type PasswordSignIn =
+  | { ok: true; identity: Identity; sessionId: string; requestToken: string; maxAgeSeconds: number }
+  | {
+      ok: false;
+      reason: "invalid_credentials" | "no_membership" | "locked";
+      retryAfterSeconds?: number;
+    };
+
+/**
+ * Password sign-in.
+ *
+ * Every failure path returns `invalid_credentials` with the same shape, so the
+ * endpoint cannot be used to learn whether an address exists or whether it has a
+ * password set. The work factor is paid even when there is no password row, so
+ * response timing does not leak account existence either.
+ */
+export async function signInWithPassword(
+  env: AuthEnv,
+  rawEmail: string,
+  password: string,
+  labels: { userAgentLabel: string; ipLabel: string },
+  now = new Date(),
+): Promise<PasswordSignIn> {
+  const email = normalizeIdentityEmail(rawEmail);
+  if (!email) return { ok: false, reason: "invalid_credentials" };
+
+  const identityRow = await env.CONTROL_DB.prepare(
+    "select id, normalized_email, verified_at from identities where normalized_email = ? and closed_at is null",
+  )
+    .bind(email)
+    .first<{ id: string; normalized_email: string; verified_at: string | null }>();
+
+  const attempts = identityRow
+    ? await env.CONTROL_DB.prepare(
+        "select failed_count, first_failed_at, locked_until from identity_login_attempts where identity_id = ?",
+      )
+        .bind(identityRow.id)
+        .first<{
+          failed_count: number;
+          first_failed_at: string | null;
+          locked_until: string | null;
+        }>()
+    : null;
+
+  const lock = lockStateFor(attempts, now.getTime());
+  if (lock.locked)
+    return { ok: false, reason: "locked", retryAfterSeconds: lock.retryAfterSeconds };
+
+  const record = identityRow
+    ? await env.CONTROL_DB.prepare(
+        "select algorithm, iterations, salt, hash from identity_passwords where identity_id = ?",
+      )
+        .bind(identityRow.id)
+        .first<PasswordRecord>()
+    : null;
+
+  // Always run a derivation. Skipping it for unknown accounts would make them
+  // measurably faster to probe.
+  const decoy: PasswordRecord = {
+    algorithm: "pbkdf2-sha256",
+    iterations: 210_000,
+    salt: "00000000000000000000000000000000",
+    hash: "",
+  };
+  const matched = await verifyPassword(password, record ?? decoy);
+
+  if (!identityRow || !record || !matched) {
+    if (identityRow) {
+      const next = nextFailureState(attempts, now.getTime());
+      await env.CONTROL_DB.prepare(
+        `insert into identity_login_attempts (identity_id, failed_count, first_failed_at, locked_until)
+         values (?, ?, ?, ?)
+         on conflict(identity_id) do update set
+           failed_count = excluded.failed_count,
+           first_failed_at = excluded.first_failed_at,
+           locked_until = excluded.locked_until`,
+      )
+        .bind(identityRow.id, next.failedCount, next.firstFailedAt, next.lockedUntil)
+        .run();
+    }
+    return { ok: false, reason: "invalid_credentials" };
+  }
+
+  const memberships = await membershipsFor(env.CONTROL_DB, identityRow.id);
+  // A correct password is not authorization. No membership, no session.
+  if (memberships.length === 0) return { ok: false, reason: "no_membership" };
+
+  // Successful sign-in clears the counter.
+  await env.CONTROL_DB.prepare("delete from identity_login_attempts where identity_id = ?")
+    .bind(identityRow.id)
+    .run();
+  await env.CONTROL_DB.prepare(
+    "update identities set verified_at = coalesce(verified_at, ?) where id = ?",
+  )
+    .bind(now.toISOString(), identityRow.id)
+    .run();
+
+  const sessionId = crypto.randomUUID();
+  const requestToken = randomToken();
+  await sessionAuthorityFor<SessionAuthorityStub>(env, identityRow.id).create({
+    id: sessionId,
+    requestToken,
+    membershipVersion: memberships[0]!.version,
+    createdAt: now.toISOString(),
+    lastUsedAt: now.toISOString(),
+    userAgentLabel: labels.userAgentLabel,
+    ipLabel: labels.ipLabel,
+  });
+
+  return {
+    ok: true,
+    identity: {
+      id: identityRow.id,
+      normalizedEmail: identityRow.normalized_email,
+      verifiedAt: identityRow.verified_at ?? now.toISOString(),
+    },
+    sessionId,
+    requestToken,
+    maxAgeSeconds: Math.floor(SESSION_TTL_MS / 1000),
+  };
 }

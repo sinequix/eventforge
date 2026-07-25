@@ -1,6 +1,7 @@
 import {
   type AuthEnv,
   authenticate,
+  signInWithPassword,
   clearedSessionCookie,
   requestSignIn,
   revokeSession,
@@ -9,6 +10,7 @@ import {
   sessionCookieValue,
   verifySignIn,
 } from "./auth.js";
+import { verifyTurnstile } from "./passwords.js";
 
 // HTTP surface for hosted sign-in. Enabled on the pre-production surface only —
 // see the caller in index.ts.
@@ -88,6 +90,61 @@ export async function handleAuth(request: Request, env: AuthEnv, url: URL): Prom
       );
       return fault(503, "MAIL_UNAVAILABLE", "Sign-in email could not be sent.");
     }
+  }
+
+  if (route === "login" && request.method === "POST") {
+    let body: { email?: unknown; password?: unknown; turnstileToken?: unknown };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return fault(400, "INVALID_BODY", "Expected a JSON body.");
+    }
+    if (typeof body.email !== "string" || typeof body.password !== "string")
+      return fault(400, "INVALID_BODY", "Email and password are required.");
+
+    // The captcha is checked before any credential work, so a bot cannot use the
+    // login endpoint as a password oracle even at low volume.
+    const captcha = await verifyTurnstile(
+      env.TURNSTILE_SECRET,
+      typeof body.turnstileToken === "string" ? body.turnstileToken : undefined,
+      request.headers.get("cf-connecting-ip") ?? undefined,
+    );
+    if (!captcha.ok) {
+      console.error(JSON.stringify({ event: "captcha_rejected", reason: captcha.reason }));
+      return fault(400, "CAPTCHA_REQUIRED", "Complete the verification challenge and try again.");
+    }
+
+    const result = await signInWithPassword(env, body.email, body.password, labelsFor(request));
+    if (!result.ok) {
+      if (result.reason === "locked")
+        return fault(
+          429,
+          "TOO_MANY_ATTEMPTS",
+          "Too many failed attempts. Try again later or use a sign-in link.",
+          result.retryAfterSeconds
+            ? { "retry-after": String(result.retryAfterSeconds) }
+            : undefined,
+        );
+      if (result.reason === "no_membership")
+        return fault(403, "NO_MEMBERSHIP", "This account has no workspace membership.");
+      // Deliberately identical for unknown address, no password set, and wrong
+      // password.
+      return fault(401, "INVALID_CREDENTIALS", "Incorrect email or password.");
+    }
+    return json(
+      {
+        identity: { id: result.identity.id, email: result.identity.normalizedEmail },
+        requestToken: result.requestToken,
+      },
+      {
+        headers: {
+          "set-cookie": sessionCookie(
+            sessionCookieValue(result.identity.id, result.sessionId),
+            result.maxAgeSeconds,
+          ),
+        },
+      },
+    );
   }
 
   if (route === "verify" && request.method === "POST") {

@@ -1,14 +1,42 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Mark } from "./Mark";
 
-// Passwordless sign-in. The server issues a one-time link; there is no password
-// field because there are no passwords in the identity model.
+// Console sign-in.
 //
-// The request token returned by /api/auth/verify is held in memory only. Putting
-// it in localStorage would make it readable by any XSS, and it is the second
-// factor that stops a stolen cookie from acting on its own.
+// Primary path is email + password, gated by a Cloudflare Turnstile challenge that
+// the server verifies against siteverify before doing any credential work.
+//
+// The one-time email link is kept as the recovery path: a password you cannot
+// remember has to be reset through something, and email possession is that
+// something.
+//
+// The request token returned on success is held in memory only. localStorage
+// would expose it to any XSS, and it is the second factor that stops a stolen
+// cookie from acting alone.
 
 const REQUEST_TOKEN_HEADER = "x-eventforge-request-token";
+const TURNSTILE_SITE_KEY = "0x4AAAAAAD9xmwCBw00F8QF2";
+const TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+
+type TurnstileApi = {
+  render: (
+    element: HTMLElement,
+    options: {
+      sitekey: string;
+      theme?: "light" | "dark" | "auto";
+      callback: (token: string) => void;
+      "expired-callback"?: () => void;
+      "error-callback"?: () => void;
+    },
+  ) => string;
+  reset: (widgetId?: string) => void;
+};
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
+}
 
 export type Session = {
   identity: { id: string; email: string };
@@ -30,19 +58,77 @@ export async function fetchSession(): Promise<Session | undefined> {
   return response.ok ? ((await response.json()) as Session) : undefined;
 }
 
-type Phase =
-  { kind: "email" } | { kind: "sent" } | { kind: "verifying" } | { kind: "error"; detail: string };
+function useTurnstile(onToken: (token: string) => void) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const widgetRef = useRef<string | undefined>(undefined);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    function render() {
+      if (cancelled || !containerRef.current || !window.turnstile || widgetRef.current) return;
+      widgetRef.current = window.turnstile.render(containerRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: "dark",
+        callback: onToken,
+        // An expired or errored challenge clears the token so the form cannot be
+        // submitted with a stale one.
+        "expired-callback": () => onToken(""),
+        "error-callback": () => onToken(""),
+      });
+      setReady(true);
+    }
+
+    if (window.turnstile) {
+      render();
+      return () => {
+        cancelled = true;
+      };
+    }
+    const existing = document.querySelector<HTMLScriptElement>(`script[src^="${TURNSTILE_SRC}"]`);
+    const script = existing ?? document.createElement("script");
+    if (!existing) {
+      script.src = `${TURNSTILE_SRC}?render=explicit`;
+      script.async = true;
+      document.head.append(script);
+    }
+    script.addEventListener("load", render);
+    return () => {
+      cancelled = true;
+      script.removeEventListener("load", render);
+    };
+  }, [onToken]);
+
+  const reset = useCallback(() => {
+    window.turnstile?.reset(widgetRef.current);
+    onToken("");
+  }, [onToken]);
+
+  return { containerRef, ready, reset };
+}
+
+type Mode = "password" | "link";
 
 export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
+  const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState("");
-  const [phase, setPhase] = useState<Phase>({ kind: "email" });
+  const [password, setPassword] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [linkSent, setLinkSent] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
-  // A token in the URL means the operator followed a sign-in link.
+  const onToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const { containerRef, ready, reset } = useTurnstile(onToken);
+
+  // A token in the URL means the operator followed a one-time link.
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("token");
     if (!token) return;
     void (async () => {
-      setPhase({ kind: "verifying" });
+      setVerifying(true);
       const response = await fetch("/api/auth/verify", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -50,36 +136,78 @@ export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Sessi
       });
       if (!response.ok) {
         const problem = (await response.json().catch(() => ({}))) as { detail?: string };
-        setPhase({
-          kind: "error",
-          detail: problem.detail ?? "The sign-in link could not be verified.",
-        });
+        setVerifying(false);
+        setError(problem.detail ?? "The sign-in link could not be verified.");
         return;
       }
       const body = (await response.json()) as { requestToken: string };
       requestToken = body.requestToken;
-      // Strip the token from the address bar so it is not left in history.
+      // Strip the token so it is not left in browser history.
       window.history.replaceState({}, "", "/console");
       const session = await fetchSession();
+      setVerifying(false);
       if (session) onSignedIn(session);
-      else setPhase({ kind: "error", detail: "Signed in, but the session could not be read." });
+      else setError("Signed in, but the session could not be read.");
     })();
   }, [onSignedIn]);
 
-  async function submit(event: FormEvent) {
+  async function submitPassword(event: FormEvent) {
     event.preventDefault();
-    const response = await fetch("/api/auth/request", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    // 202 regardless of whether the address exists, so this cannot enumerate accounts.
-    setPhase(
-      response.ok
-        ? { kind: "sent" }
-        : { kind: "error", detail: "Sign-in is unavailable right now." },
-    );
+    setError(undefined);
+    setBusy(true);
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password, turnstileToken: captchaToken }),
+      });
+      if (!response.ok) {
+        const problem = (await response.json().catch(() => ({}))) as { detail?: string };
+        setError(problem.detail ?? "Sign-in failed.");
+        // A consumed challenge cannot be replayed, so always issue a fresh one.
+        reset();
+        return;
+      }
+      const body = (await response.json()) as { requestToken: string };
+      requestToken = body.requestToken;
+      const session = await fetchSession();
+      if (session) onSignedIn(session);
+      else setError("Signed in, but the session could not be read.");
+    } finally {
+      setBusy(false);
+    }
   }
+
+  async function submitLink(event: FormEvent) {
+    event.preventDefault();
+    setError(undefined);
+    setBusy(true);
+    try {
+      const response = await fetch("/api/auth/request", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      // 202 regardless of whether the address exists — no account enumeration.
+      if (response.ok) setLinkSent(true);
+      else setError("Sign-in is unavailable right now.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (verifying)
+    return (
+      <main className="ef-signin">
+        <div className="ef-signin-card">
+          <a className="ef-brand" href="/">
+            <Mark />
+            <span>EventForge</span>
+          </a>
+          <p className="ef-signin-status">Verifying your sign-in link…</p>
+        </div>
+      </main>
+    );
 
   return (
     <main className="ef-signin">
@@ -89,47 +217,94 @@ export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Sessi
           <span>EventForge</span>
         </a>
 
-        {phase.kind === "verifying" && <p className="ef-signin-status">Verifying your link…</p>}
-
-        {phase.kind === "sent" && (
+        {linkSent ? (
           <>
             <h1>Check your email</h1>
             <p className="ef-signin-copy">
               If <strong>{email}</strong> has access, a one-time sign-in link is on its way. It
               expires in 15 minutes and works once.
             </p>
-            <button className="ef-signin-secondary" onClick={() => setPhase({ kind: "email" })}>
-              Use a different address
+            <button
+              className="ef-signin-secondary"
+              onClick={() => {
+                setLinkSent(false);
+                setMode("password");
+              }}
+              type="button"
+            >
+              Back to sign in
             </button>
           </>
-        )}
-
-        {(phase.kind === "email" || phase.kind === "error") && (
+        ) : (
           <>
             <h1>Sign in</h1>
             <p className="ef-signin-copy">
-              EventForge uses one-time email links. There is no password to lose.
+              {mode === "password"
+                ? "Use your email and password."
+                : "We will email you a one-time sign-in link."}
             </p>
-            {phase.kind === "error" && (
+
+            {error && (
               <p className="ef-signin-error" role="alert">
-                {phase.detail}
+                {error}
               </p>
             )}
-            <form onSubmit={submit}>
-              <label htmlFor="ef-signin-email">Work email</label>
+
+            <form onSubmit={mode === "password" ? submitPassword : submitLink}>
+              <label htmlFor="ef-signin-email">Email</label>
               <input
-                autoComplete="email"
+                autoComplete="username"
                 id="ef-signin-email"
+                name="email"
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="you@company.com"
                 required
                 type="email"
                 value={email}
               />
-              <button className="ef-signin-primary" type="submit">
-                Send sign-in link
+
+              {mode === "password" && (
+                <>
+                  <label htmlFor="ef-signin-password">Password</label>
+                  <input
+                    autoComplete="current-password"
+                    id="ef-signin-password"
+                    minLength={12}
+                    name="password"
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                    type="password"
+                    value={password}
+                  />
+                  <div className="ef-signin-captcha" ref={containerRef} />
+                </>
+              )}
+
+              <button
+                className="ef-signin-primary"
+                disabled={busy || (mode === "password" && (!captchaToken || !ready))}
+                type="submit"
+              >
+                {busy
+                  ? "Working…"
+                  : mode === "password"
+                    ? captchaToken
+                      ? "Sign in"
+                      : "Complete the challenge"
+                    : "Email me a link"}
               </button>
             </form>
+
+            <button
+              className="ef-signin-link"
+              onClick={() => {
+                setMode(mode === "password" ? "link" : "password");
+                setError(undefined);
+              }}
+              type="button"
+            >
+              {mode === "password" ? "Forgot your password? Sign in by email" : "Use a password"}
+            </button>
           </>
         )}
 
