@@ -27,6 +27,7 @@ const SESSION_TTL_MS = 12 * 60 * 60_000;
 export type AuthEnv = {
   CONTROL_DB: D1Database;
   TURNSTILE_SECRET?: string;
+  AUTH_CAPTCHA_DISABLED?: string;
   IDENTITY_AUTHORITY: { getByName(name: string): SessionAuthorityStub };
   EMAIL?: { send(message: EmailMessage): Promise<unknown> };
   ENVIRONMENT: string;

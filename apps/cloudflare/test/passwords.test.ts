@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_ATTEMPTS,
+  captchaRequired,
   PBKDF2_ITERATIONS,
+  PBKDF2_MAX_ITERATIONS,
   constantTimeEqual,
   hashPassword,
   lockStateFor,
@@ -19,6 +21,23 @@ describe("password hashing", () => {
     await expect(verifyPassword("correct horse battery staple", record)).resolves.toBe(true);
     await expect(verifyPassword("Correct horse battery staple", record)).resolves.toBe(false);
     await expect(verifyPassword("", record)).resolves.toBe(false);
+  });
+
+  it("never configures more iterations than workerd supports", () => {
+    // workerd rejects PBKDF2 above 100k at runtime:
+    //   "Pbkdf2 failed: iteration counts above 100000 are not supported"
+    // Configuring more does not fail the build — it 500s every sign-in, which is
+    // exactly how this was found. This test is the build-time guard.
+    expect(PBKDF2_ITERATIONS).toBeLessThanOrEqual(PBKDF2_MAX_ITERATIONS);
+    expect(PBKDF2_MAX_ITERATIONS).toBe(100_000);
+  });
+
+  it("refuses a stored row above the platform cap instead of throwing", async () => {
+    // Rows written before the cap was known would otherwise crash the request.
+    const record = await hashPassword("correct horse battery staple");
+    await expect(
+      verifyPassword("correct horse battery staple", { ...record, iterations: 210_000 }),
+    ).resolves.toBe(false);
   });
 
   it("salts every hash so identical passwords do not collide", async () => {
@@ -131,6 +150,48 @@ describe("login lockout", () => {
     );
     expect(stale.failedCount).toBe(1);
     expect(stale.lockedUntil).toBeNull();
+  });
+});
+
+describe("captcha requirement", () => {
+  it("requires a captcha by default", () => {
+    expect(captchaRequired({})).toBe(true);
+    expect(captchaRequired({ ENVIRONMENT: "preview" })).toBe(true);
+    expect(captchaRequired({ ENVIRONMENT: "production" })).toBe(true);
+  });
+
+  it("can be disabled only on a non-production surface", () => {
+    expect(captchaRequired({ ENVIRONMENT: "preview", AUTH_CAPTCHA_DISABLED: "true" })).toBe(false);
+    expect(captchaRequired({ ENVIRONMENT: "development", AUTH_CAPTCHA_DISABLED: "true" })).toBe(
+      false,
+    );
+  });
+
+  it("CANNOT be disabled in production even when the flag is set", () => {
+    // The whole point of the two-condition check: a stray variable in the
+    // production config must not silently remove the control.
+    expect(captchaRequired({ ENVIRONMENT: "production", AUTH_CAPTCHA_DISABLED: "true" })).toBe(
+      true,
+    );
+  });
+
+  it('only accepts the exact string "true" as an opt-out', () => {
+    // A truthy-ish value must not disable a security control by accident.
+    for (const value of ["1", "yes", "TRUE", "True", "on", " true", "true ", ""])
+      expect(
+        captchaRequired({ ENVIRONMENT: "preview", AUTH_CAPTCHA_DISABLED: value }),
+        `${JSON.stringify(value)} must not disable the captcha`,
+      ).toBe(true);
+  });
+
+  it("a missing secret still does not disable the captcha", async () => {
+    // Losing the secret must not be mistaken for a deliberate opt-out: the
+    // requirement stays on and verifyTurnstile fails closed.
+    expect(captchaRequired({ ENVIRONMENT: "preview" })).toBe(true);
+    await expect(verifyTurnstile(undefined, "token", undefined)).resolves.toEqual({
+      ok: false,
+      reason: "captcha_unconfigured",
+    });
   });
 });
 

@@ -4,9 +4,19 @@
 // no password row at all, and the email-link path stays as the recovery route
 // (there is no other way to reset a password you cannot remember).
 
-// OWASP's PBKDF2-HMAC-SHA256 floor. Argon2/bcrypt are not available in workerd
-// without shipping WASM, and PBKDF2 is what WebCrypto provides natively.
-export const PBKDF2_ITERATIONS = 210_000;
+// workerd refuses PBKDF2 above 100k iterations:
+//   "Pbkdf2 failed: iteration counts above 100000 are not supported"
+// so this is pinned to the platform maximum, not to OWASP's recommended 210k.
+//
+// That is a real weakening versus the recommendation and is compensated for
+// elsewhere rather than ignored: a 12-character minimum, lockout after 8 failed
+// attempts in an hour, and a captcha in front of the endpoint. Argon2 or bcrypt
+// would be stronger but are not available in workerd without shipping WASM.
+//
+// Do not raise this above PBKDF2_MAX_ITERATIONS — the platform rejects it at
+// runtime, which surfaces as a 500 on every sign-in rather than a build failure.
+export const PBKDF2_MAX_ITERATIONS = 100_000;
+export const PBKDF2_ITERATIONS = 100_000;
 const ALGORITHM = "pbkdf2-sha256";
 const KEY_LENGTH_BITS = 256;
 
@@ -83,6 +93,10 @@ export async function verifyPassword(password: string, record: PasswordRecord): 
   // An unknown algorithm must fail closed rather than fall through to a default.
   if (record.algorithm !== ALGORITHM) return false;
   if (!Number.isSafeInteger(record.iterations) || record.iterations < 100_000) return false;
+  // A stored row above the platform cap would make deriveBits throw, taking the
+  // whole request down with a 500. Refuse it as unverifiable instead — the
+  // credential then has to be reset, which is the safe direction.
+  if (record.iterations > PBKDF2_MAX_ITERATIONS) return false;
   if (!/^[a-f0-9]+$/.test(record.salt) || record.salt.length % 2 !== 0) return false;
   const candidate = await derive(password, fromHex(record.salt), record.iterations);
   return constantTimeEqual(candidate, record.hash);
@@ -134,6 +148,29 @@ export function nextFailureState(
 export const MAX_ATTEMPTS = MAX_FAILED_ATTEMPTS;
 
 export type TurnstileOutcome = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Whether a sign-in must carry a solved captcha.
+ *
+ * Two conditions must BOTH hold to disable it, and production can never satisfy
+ * the first:
+ *   1. the environment is not production, and
+ *   2. AUTH_CAPTCHA_DISABLED is exactly "true".
+ *
+ * Written this way on purpose. Keying only off the flag would mean a stray
+ * variable in the production config silently removes the control; keying only off
+ * the environment would remove it from every non-production deploy whether or not
+ * anyone asked. Absence of a secret still does NOT disable the captcha — that path
+ * fails closed in verifyTurnstile, so a lost secret cannot be mistaken for a
+ * deliberate opt-out.
+ */
+export function captchaRequired(env: {
+  ENVIRONMENT?: string;
+  AUTH_CAPTCHA_DISABLED?: string;
+}): boolean {
+  const nonProduction = env.ENVIRONMENT !== "production";
+  return !(nonProduction && env.AUTH_CAPTCHA_DISABLED === "true");
+}
 
 /**
  * Server-side Turnstile verification. The widget response is worthless until

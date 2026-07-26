@@ -58,13 +58,15 @@ export async function fetchSession(): Promise<Session | undefined> {
   return response.ok ? ((await response.json()) as Session) : undefined;
 }
 
-function useTurnstile(onToken: (token: string) => void) {
+function useTurnstile(onToken: (token: string) => void, enabled: boolean) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetRef = useRef<string | undefined>(undefined);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!enabled) return;
 
     function render() {
       if (cancelled || !containerRef.current || !window.turnstile || widgetRef.current) return;
@@ -98,7 +100,7 @@ function useTurnstile(onToken: (token: string) => void) {
       cancelled = true;
       script.removeEventListener("load", render);
     };
-  }, [onToken]);
+  }, [onToken, enabled]);
 
   const reset = useCallback(() => {
     window.turnstile?.reset(widgetRef.current);
@@ -120,8 +122,23 @@ export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Sessi
   const [linkSent, setLinkSent] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
+  // undefined until the server answers, so the form never guesses.
+  const [captchaNeeded, setCaptchaNeeded] = useState<boolean | undefined>();
   const onToken = useCallback((token: string) => setCaptchaToken(token), []);
-  const { containerRef, ready, reset } = useTurnstile(onToken);
+  const { containerRef, ready, reset } = useTurnstile(onToken, captchaNeeded === true);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch("/api/auth/config");
+        const body = (await response.json()) as { captchaRequired?: boolean };
+        // Default to requiring it if the answer is unusable — the safe direction.
+        setCaptchaNeeded(body.captchaRequired !== false);
+      } catch {
+        setCaptchaNeeded(true);
+      }
+    })();
+  }, []);
 
   // A token in the URL means the operator followed a one-time link.
   useEffect(() => {
@@ -244,6 +261,12 @@ export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Sessi
                 : "We will email you a one-time sign-in link."}
             </p>
 
+            {captchaNeeded === false && (
+              <p className="ef-signin-notice">
+                Bot protection is off on this environment. Never enable that in production.
+              </p>
+            )}
+
             {error && (
               <p className="ef-signin-error" role="alert">
                 {error}
@@ -276,19 +299,23 @@ export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Sessi
                     type="password"
                     value={password}
                   />
-                  <div className="ef-signin-captcha" ref={containerRef} />
+                  {captchaNeeded && <div className="ef-signin-captcha" ref={containerRef} />}
                 </>
               )}
 
               <button
                 className="ef-signin-primary"
-                disabled={busy || (mode === "password" && (!captchaToken || !ready))}
+                disabled={
+                  busy ||
+                  captchaNeeded === undefined ||
+                  (mode === "password" && captchaNeeded && (!captchaToken || !ready))
+                }
                 type="submit"
               >
                 {busy
                   ? "Working…"
                   : mode === "password"
-                    ? captchaToken
+                    ? !captchaNeeded || captchaToken
                       ? "Sign in"
                       : "Complete the challenge"
                     : "Email me a link"}

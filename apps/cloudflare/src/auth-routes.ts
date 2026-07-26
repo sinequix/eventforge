@@ -10,7 +10,7 @@ import {
   sessionCookieValue,
   verifySignIn,
 } from "./auth.js";
-import { verifyTurnstile } from "./passwords.js";
+import { captchaRequired, verifyTurnstile } from "./passwords.js";
 
 // HTTP surface for hosted sign-in. Enabled on the pre-production surface only —
 // see the caller in index.ts.
@@ -92,6 +92,13 @@ export async function handleAuth(request: Request, env: AuthEnv, url: URL): Prom
     }
   }
 
+  // The console reads this so the form and the server cannot disagree about
+  // whether a captcha is needed. Getting that wrong once already produced a login
+  // that rejected every attempt for a missing token while showing no widget.
+  if (route === "config" && request.method === "GET") {
+    return json({ captchaRequired: captchaRequired(env), environment: env.ENVIRONMENT });
+  }
+
   if (route === "login" && request.method === "POST") {
     let body: { email?: unknown; password?: unknown; turnstileToken?: unknown };
     try {
@@ -104,14 +111,26 @@ export async function handleAuth(request: Request, env: AuthEnv, url: URL): Prom
 
     // The captcha is checked before any credential work, so a bot cannot use the
     // login endpoint as a password oracle even at low volume.
-    const captcha = await verifyTurnstile(
-      env.TURNSTILE_SECRET,
-      typeof body.turnstileToken === "string" ? body.turnstileToken : undefined,
-      request.headers.get("cf-connecting-ip") ?? undefined,
-    );
-    if (!captcha.ok) {
-      console.error(JSON.stringify({ event: "captcha_rejected", reason: captcha.reason }));
-      return fault(400, "CAPTCHA_REQUIRED", "Complete the verification challenge and try again.");
+    if (captchaRequired(env)) {
+      const captcha = await verifyTurnstile(
+        env.TURNSTILE_SECRET,
+        typeof body.turnstileToken === "string" ? body.turnstileToken : undefined,
+        request.headers.get("cf-connecting-ip") ?? undefined,
+      );
+      if (!captcha.ok) {
+        console.error(JSON.stringify({ event: "captcha_rejected", reason: captcha.reason }));
+        return fault(400, "CAPTCHA_REQUIRED", "Complete the verification challenge and try again.");
+      }
+    } else {
+      // Logged every time so a deploy running without the control is obvious in
+      // the logs rather than something you have to infer from config.
+      console.warn(
+        JSON.stringify({
+          event: "captcha_disabled",
+          environment: env.ENVIRONMENT,
+          detail: "AUTH_CAPTCHA_DISABLED is set on a non-production surface",
+        }),
+      );
     }
 
     const result = await signInWithPassword(env, body.email, body.password, labelsFor(request));

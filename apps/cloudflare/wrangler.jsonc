@@ -18,6 +18,11 @@
     "CANARY_PROJECT_ID": "eventforge-canary",
     "CANARY_ENVIRONMENT_ID": "00000000-0000-4000-8000-000000000001",
     "AUTH_MAIL_FROM": "no-reply@mail.eventforge.dev",
+    // Pre-production convenience: Turnstile refuses to auto-solve in automated
+    // browsers, which blocks local and beta testing of the password path.
+    // captchaRequired() also demands a non-production ENVIRONMENT, so setting this
+    // in env.production would have no effect.
+    "AUTH_CAPTCHA_DISABLED": "true",
     "AUTH_CONSOLE_ORIGIN": "https://beta.eventforge.dev",
   },
   "secrets": {
