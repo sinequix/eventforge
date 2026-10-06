@@ -32,6 +32,7 @@ const SESSION_TTL_MS = 12 * 60 * 60_000;
 export type AuthEnv = {
   CONTROL_DB: D1Database;
   TURNSTILE_SECRET?: string;
+  WAITLIST_RATE_LIMIT_SECRET?: string;
   AUTH_CAPTCHA_DISABLED?: string;
   IDENTITY_AUTHORITY: { getByName(name: string): SessionAuthorityStub };
   EMAIL?: { send(message: EmailMessage): Promise<unknown> };
@@ -159,7 +160,7 @@ export const clearedSessionCookie = `${SESSION_COOKIE}=; Path=/; HttpOnly; Secur
 
 const PRODUCTION_CONSOLE_ORIGIN = "https://eventforge.dev";
 const CONSOLE_ORIGIN_PATTERN =
-  /^https:\/\/eventforge\.dev$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+  /^https:\/\/(dev\.)?eventforge\.dev$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 export function consoleOriginFor(env: AuthEnv): string {
   const configured = env.AUTH_CONSOLE_ORIGIN?.trim();
@@ -280,7 +281,7 @@ export async function verifySignIn(
   if (!/^[a-f0-9]{64}$/.test(token)) return { ok: false, reason: "invalid" };
   const tokenHash = await hashToken(token);
   const challenge = await env.CONTROL_DB.prepare(
-    "select id, identity_id, expires_at, used_at from email_challenges where token_hash = ?",
+    "select c.id, c.identity_id, c.expires_at, c.used_at from email_challenges c join identities i on i.id = c.identity_id where c.token_hash = ? and i.closed_at is null",
   )
     .bind(tokenHash)
     .first<{ id: string; identity_id: string; expires_at: string; used_at: string | null }>();

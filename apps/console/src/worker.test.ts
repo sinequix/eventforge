@@ -54,6 +54,34 @@ it("serves the console SPA on production instead of a sign-in gate", async () =>
   expect(await response.text()).toContain("console");
 });
 
+it("proxies /v1 on production so destination APIs stay same-origin", async () => {
+  const originalFetch = globalThis.fetch;
+  const fetchMock = vi.fn(
+    async () =>
+      new Response(JSON.stringify({ items: [] }), {
+        headers: { "content-type": "application/json" },
+      }),
+  );
+  globalThis.fetch = fetchMock as typeof fetch;
+  try {
+    const response = await worker.fetch(
+      new Request("https://eventforge.dev/v1/workspaces/w1/installations"),
+      {
+        ASSETS: { fetch: async () => new Response("assets") },
+        API_ORIGIN: "https://api.eventforge.dev",
+      },
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const first = fetchMock.mock.calls[0] as unknown as [Request];
+    expect(new URL(first[0].url).href).toBe(
+      "https://api.eventforge.dev/v1/workspaces/w1/installations",
+    );
+    expect(await response.json()).toEqual({ items: [] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 it("proxies /api on production so the session cookie can stay SameSite=Strict", async () => {
   const originalFetch = globalThis.fetch;
   const fetchMock = vi.fn(
@@ -69,8 +97,8 @@ it("proxies /api on production so the session cookie can stay SameSite=Strict", 
       API_ORIGIN: "https://api.eventforge.dev",
     });
     expect(fetchMock).toHaveBeenCalledOnce();
-    const upstream = fetchMock.mock.calls[0]![0] as Request;
-    expect(new URL(upstream.url).href).toBe("https://api.eventforge.dev/api/auth/config");
+    const first = fetchMock.mock.calls[0] as unknown as [Request];
+    expect(new URL(first[0].url).href).toBe("https://api.eventforge.dev/api/auth/config");
     expect(await response.json()).toEqual({ captchaRequired: true });
   } finally {
     globalThis.fetch = originalFetch;

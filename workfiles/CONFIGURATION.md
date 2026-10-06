@@ -323,6 +323,40 @@ Cloudflare account credentials (`CLOUDFLARE_ACCOUNT_ID`,
 `EVENTFORGE_TUNNEL_NAMING_KEY`) belong only on the authenticated hosted control
 plane. Never copy them into Codex, the MCP client, or a browser variable.
 
+## Local stack (`./dev.sh`)
+
+`./dev.sh` starts the loopback API Worker, control plane, and Vite console, then
+fronts them with a named Cloudflare Tunnel at `https://dev.eventforge.dev`.
+That hostname is for a developer machine only; it is not a production Worker
+custom domain.
+
+```bash
+./dev.sh                  # start, supervise until Ctrl-C
+./dev.sh start --remote   # local processes, preview D1/R2
+./dev.sh status
+./dev.sh stop
+```
+
+`--remote` keeps the Worker on loopback and marks D1/R2 `remote: true` (preview
+by default, `--remote=production` for production data). Writes to a remote
+database persist. Session Durable Objects and the ingest queue stay local.
+
+Requires `pnpm`, `curl`, `python3`, `dig`, `cloudflared` (`cloudflared tunnel login`
+once), and Wrangler auth. The tunnel name is `eventforge-dev`. Processes bind
+`127.0.0.1` only.
+
+The tunnel starts even if this machine's `getaddrinfo` still NXDOMAINs
+`dev.eventforge.dev` (Tailscale / mDNSResponder negative cache). Health checks
+use `dig @1.1.1.1` plus `curl --resolve`. Flush the Mac cache with
+`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` if browsers
+cannot resolve the name. Until then, Chrome can MAP the host:
+
+```bash
+agent-browser --session eventforge-local-dev \
+  --args "--host-resolver-rules=MAP dev.eventforge.dev 172.67.170.94" \
+  open https://dev.eventforge.dev/console
+```
+
 ## Configuration precedence and safety
 
 1. Explicit process environment supplied by Codex or the shell.
@@ -367,3 +401,95 @@ Then remove any matching `mcp_servers.eventforge` block from
 `~/.codex/config.toml`. Removing the MCP registration does not delete local
 EventForge data or provider webhooks; clean those up separately when using the
 GitHub relay.
+
+
+## Security audit and release — 2026-09-09
+
+Released from clean source at `6ced988`, with the security patch in
+`workfiles/security-release.patch`. Existing uncommitted webhook/dashboard work
+was preserved locally and excluded from the production release.
+
+- API version: `d56ad744-eeb3-42be-8b24-7e4a3ed0ceac`.
+- Console version: `1b8f90c2-00c9-4304-9dd1-32ab4d28591e`.
+- Applied production CONTROL_DB migration `0007_public_request_limits.sql`.
+- Retained production ingress, durable delivery, and monitoring gates.
+
+### Findings fixed
+
+1. Production waitlist JSON `null` caused HTTP 500. Auth and waitlist now reject
+   non-object payloads; JSON reading bounds streamed UTF-8 bytes to 8 KiB.
+2. Waitlist responses exposed existing email addresses. All accepted submissions
+   now return only `{accepted:true}`. Duplicate attempts consume rate allowance.
+3. Waitlist count-then-insert allowed concurrent bypass; email-link requests lacked
+   abuse limits. Atomic D1 counters enforce waitlist 5/IP/hour, auth 30/IP/15 minutes
+   per route, email links 5/address/hour, and password attempts 8/address/15 minutes.
+   Counter keys hash subjects with the configured secret; expired counters are
+   pruned by the scheduled handler. Production refuses missing limiter secrets.
+4. Cross-origin login requests were not explicitly rejected. Production accepts
+   its own browser origin and rejects development and cross-site origins.
+5. SessionAuthority had no server expiry and `.one()` threw for missing sessions.
+   Sessions now expire after 12 hours and missing/revoked sessions fail closed.
+   Closed identities cannot redeem existing sign-in challenges.
+6. Reload discarded the CSRF request token. It now persists only in sessionStorage
+   for the current tab; logout clears it and revokes the HttpOnly cookie session.
+   This token is a CSRF control, not MFA. Network failures show recoverable errors.
+   Email recovery can return to password mode without resetting a removed captcha.
+7. Verification URLs retained tokens on failure. Tokens are removed before async
+   verification; console documents use `no-store` and `no-referrer`.
+8. The waitlist form accessed React's cleared event.currentTarget after awaiting
+   the request, turning successful writes into UI errors. The form element is now
+   captured before awaiting. Local waitlist uses the same-origin `/v1/waitlist` proxy.
+9. Local launcher migrations targeted a different state directory from the Worker.
+   Both now use `.eventforge/dev/wrangler-state`; control/events schemas were applied.
+   `--remote=production` is refused because development auth must not use production
+   identities. The normal local stack was stopped when inspected and remains stopped.
+10. Production dependency audit found vulnerable transitive packages. Constrained
+    patched versions now produce zero advisories in `pnpm audit --prod --json`.
+
+### Verification and limits
+
+- Integrated local workspace: 421 tests passed across seven packages, full
+  typecheck passed, focused ESLint passed, console build and Worker dry run passed.
+  The final console-only change passed all 56 console tests and typecheck.
+- Isolated release: 54 Worker tests and 40 console tests passed; both typechecks,
+  console build, and production Worker dry run passed before deployment.
+- Disposable workerd/D1 fixture: migrations, waitlist submission, password failure,
+  single-use email sign-in, dashboard, reload, logout. No real account used.
+- Production: health 200; captcha required; malformed waitlist/auth 400; hostile
+  login origin 403; invalid challenge 400; console cache/referrer controls confirmed.
+- Production browser signup using a reserved `.test` email succeeded, D1 confirmed
+  exactly one row, duplicate response stayed uniform, and the synthetic row was
+  deleted afterward. Playbook: `workfiles/agent-browser/README.md`.
+- Production email-link delivery, authenticated session, reload, single-use link,
+  and logout acceptance passed in the follow-up below. Password/Turnstile success
+  remains a separate unverified path; it is not an email delivery blocker.
+- This pass covers the shipped auth/waitlist boundary, local dev isolation, existing
+  role/API-key gates, and dependency advisories. It does not certify all platform
+  security or implement the separate domain-model MFA/recovery/SSO features.
+- The repository's 4,000-token task budget was exceeded; the breach was surfaced
+  during the audit. No commits or pushes were made.
+
+References checked: [Cloudflare Workers practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/)
+and [Cloudflare request headers](https://developers.cloudflare.com/fundamentals/reference/http-headers/).
+
+
+### Email delivery follow-up — 2026-09-09 19:30 UTC
+
+User authorized completing the pending email delivery check. Tested the existing
+active `jorge@pox.me` identity, with one workspace membership, through the deployed
+`https://eventforge.dev/api/auth/request` endpoint. No identity or membership changes.
+
+- `mail.eventforge.dev` is enabled for Cloudflare Email Sending.
+- Request returned HTTP 202; message reached the Gmail inbox at 19:30:05 UTC.
+- Gmail message `1a087a635294d7cc`: SPF pass, DKIM pass for `mail.eventforge.dev`,
+  DMARC pass. Inbox label present; not classified as spam.
+- Delivered link opened production `/console`; URL token was removed.
+- Authenticated `/api/auth/session` returned 200 with the expected identity and
+  one membership. Reload retained a valid session (200).
+- Reusing the delivered one-time link returned 400 `INVALID_TOKEN`.
+- Logout returned 200; subsequent session lookup returned 401. Test session closed.
+- No delivery failure reproduced, so no email code or deployment change was needed.
+
+Email delivery acceptance is complete. The authenticated console rendered the
+existing operations UI with “Control plane offline”; this is a separate console/API
+integration issue, not an email delivery or session-creation failure.

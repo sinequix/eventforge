@@ -20,6 +20,7 @@
     "dev:github": "pnpm --filter @eventforge/control-plane start:github",
     "dev:console": "pnpm --filter @eventforge/console dev",
     "dev:desktop": "pnpm --filter @eventforge/desktop dev",
+    "dev:stack": "./dev.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "pack:check": "pnpm --filter @eventforge/mcp-server pack:check",
@@ -28,7 +29,7 @@
     "private-edge:test": "node scripts/private-edge-preflight.test.mjs",
     "quality": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test:coverage && pnpm private-edge:test && pnpm pack:check && pnpm plugin:check",
     "test": "pnpm -r run test",
-    "test:coverage": "pnpm --filter @eventforge/core exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary && pnpm --filter @eventforge/cloudflare exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary && pnpm --filter @eventforge/control-plane exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary && pnpm --filter @eventforge/console exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary && pnpm --filter @eventforge/desktop exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary && pnpm --filter @eventforge/mcp-server test:coverage",
+    "test:coverage": "pnpm --filter @eventforge/core exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary && pnpm --filter @eventforge/cloudflare exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary && pnpm --filter @eventforge/control-plane exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary && pnpm --filter @eventforge/console exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary && pnpm --filter @eventforge/desktop exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary && pnpm --filter @eventforge/mcp-server test:coverage && pnpm --filter @eventforge/webhooks exec vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary",
     "typecheck": "pnpm -r run typecheck",
     "lint": "eslint . --max-warnings 0"
   },

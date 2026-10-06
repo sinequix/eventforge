@@ -107,6 +107,7 @@ describe("durable delivery safety boundaries", () => {
                   status: "queued",
                   payload_ref: "workspace-1/delivery-1",
                   payload_checksum: "checksum",
+                  destination_id: null,
                 }
               : null,
           run: async () => ({ meta: { changes: 0 } }),

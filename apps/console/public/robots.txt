@@ -2,26 +2,31 @@ User-agent: *
 Allow: /
 Disallow: /console
 Disallow: /api
+Disallow: /v1
 
 User-agent: GPTBot
 Allow: /
 Disallow: /console
 Disallow: /api
+Disallow: /v1
 
 User-agent: OAI-SearchBot
 Allow: /
 Disallow: /console
 Disallow: /api
+Disallow: /v1
 
 User-agent: Claude-Web
 Allow: /
 Disallow: /console
 Disallow: /api
+Disallow: /v1
 
 User-agent: Google-Extended
 Allow: /
 Disallow: /console
 Disallow: /api
+Disallow: /v1
 
 Content-Signal: ai-train=no, search=yes, ai-input=yes
 Sitemap: https://eventforge.dev/sitemap.xml

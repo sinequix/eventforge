@@ -4,8 +4,7 @@ import { captureEvent } from "./analytics";
 
 type SubmissionState = "idle" | "submitting" | "success" | "error";
 
-const WAITLIST_API_URL =
-  import.meta.env.VITE_WAITLIST_API_URL?.trim() || "https://api.eventforge.dev/v1/waitlist";
+const WAITLIST_API_URL = import.meta.env.VITE_WAITLIST_API_URL?.trim() || "/v1/waitlist";
 
 export function WaitlistForm({ source, idPrefix }: { source: string; idPrefix: string }) {
   const [state, setState] = useState<SubmissionState>("idle");
@@ -14,7 +13,8 @@ export function WaitlistForm({ source, idPrefix }: { source: string; idPrefix: s
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const email = String(form.get("email") ?? "").trim();
     const consent = form.get("consent") === "on";
     const website = String(form.get("website") ?? "");
@@ -36,12 +36,10 @@ export function WaitlistForm({ source, idPrefix }: { source: string; idPrefix: s
         throw new Error(body.detail || "The waitlist is unavailable.");
       setState("success");
       setMessage(
-        body.alreadyRegistered
-          ? "You are already on the list. We will keep you posted."
-          : "You are on the list. We will send the next useful update, not a noisy newsletter.",
+        "You are on the list. We will send the next useful update, not a noisy newsletter.",
       );
-      captureEvent("waitlist_submitted", { already_registered: body.alreadyRegistered === true });
-      event.currentTarget.reset();
+      captureEvent("waitlist_submitted");
+      formElement.reset();
     } catch (error) {
       setState("error");
       setMessage(

@@ -39,5 +39,7 @@ export * as providerInstallations from "./provider-installations.js";
 export * as reactionWorker from "./reaction-worker.js";
 export * as replayAudit from "./replay-audit.js";
 export * as sdk from "./sdk.js";
+export * as standardWebhooks from "./standard-webhooks.js";
 export * as telemetry from "./telemetry.js";
 export * as timeline from "./timeline.js";
+export * as webhookDestinations from "./webhook-destinations.js";

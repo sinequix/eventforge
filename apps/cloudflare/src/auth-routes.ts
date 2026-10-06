@@ -1,3 +1,5 @@
+import { readJson } from "./http.js";
+import { allowedBrowserOrigin, consumePublicLimit } from "./public-security.js";
 import {
   type AuthEnv,
   authenticate,
@@ -57,22 +59,36 @@ function labelsFor(request: Request): { userAgentLabel: string; ipLabel: string 
   };
 }
 
-async function readEmail(request: Request): Promise<string | undefined> {
-  try {
-    const body = (await request.json()) as { email?: unknown };
-    return typeof body.email === "string" ? body.email : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export async function handleAuth(request: Request, env: AuthEnv, url: URL): Promise<Response> {
   const route = url.pathname.slice("/api/auth/".length);
+  let payload: Record<string, unknown> = {};
+  if (request.method === "POST") {
+    const origin = request.headers.get("origin");
+    if (
+      (origin && !allowedBrowserOrigin(origin, env.ENVIRONMENT)) ||
+      request.headers.get("sec-fetch-site") === "cross-site"
+    )
+      return fault(403, "ORIGIN_NOT_ALLOWED", "Use the EventForge console to sign in.");
+    if (route !== "logout") {
+      const body = await readJson(request, 8192);
+      if (!body.ok) return body.response;
+      if (!body.value || typeof body.value !== "object" || Array.isArray(body.value))
+        return fault(400, "INVALID_BODY", "Expected a JSON object.");
+      payload = body.value as Record<string, unknown>;
+    }
+    if (["request", "login", "verify"].includes(route)) {
+      const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+      if (!(await consumePublicLimit(env, `auth:${route}:ip`, ip, 30, 900)))
+        return fault(429, "TOO_MANY_ATTEMPTS", "Please try again later.", { "retry-after": "900" });
+    }
+  }
 
   if (route === "request" && request.method === "POST") {
-    const email = await readEmail(request);
+    const email = typeof payload.email === "string" ? payload.email : undefined;
     if (email === undefined)
       return fault(400, "INVALID_BODY", "Expected a JSON body with an email.");
+    if (!(await consumePublicLimit(env, "auth:email", email.trim().toLowerCase(), 5)))
+      return json({ accepted: true }, { status: 202 });
     try {
       const outcome = await requestSignIn(env, email);
       // Always 202 with the same shape: this endpoint must not reveal whether an
@@ -88,7 +104,7 @@ export async function handleAuth(request: Request, env: AuthEnv, url: URL): Prom
           error: error instanceof Error ? error.message : "unknown",
         }),
       );
-      return fault(503, "MAIL_UNAVAILABLE", "Sign-in email could not be sent.");
+      return json({ accepted: true }, { status: 202 });
     }
   }
 
@@ -100,14 +116,25 @@ export async function handleAuth(request: Request, env: AuthEnv, url: URL): Prom
   }
 
   if (route === "login" && request.method === "POST") {
-    let body: { email?: unknown; password?: unknown; turnstileToken?: unknown };
-    try {
-      body = (await request.json()) as typeof body;
-    } catch {
-      return fault(400, "INVALID_BODY", "Expected a JSON body.");
-    }
-    if (typeof body.email !== "string" || typeof body.password !== "string")
+    const body = payload;
+    if (
+      typeof body.email !== "string" ||
+      typeof body.password !== "string" ||
+      body.password.length > 256 ||
+      body.email.length > 254
+    )
       return fault(400, "INVALID_BODY", "Email and password are required.");
+
+    if (
+      !(await consumePublicLimit(
+        env,
+        "auth:password:email",
+        body.email.trim().toLowerCase(),
+        8,
+        900,
+      ))
+    )
+      return fault(429, "TOO_MANY_ATTEMPTS", "Please try again later.", { "retry-after": "900" });
 
     // The captcha is checked before any credential work, so a bot cannot use the
     // login endpoint as a password oracle even at low volume.
@@ -171,13 +198,7 @@ export async function handleAuth(request: Request, env: AuthEnv, url: URL): Prom
   }
 
   if (route === "verify" && request.method === "POST") {
-    let token: string | undefined;
-    try {
-      const body = (await request.json()) as { token?: unknown };
-      token = typeof body.token === "string" ? body.token : undefined;
-    } catch {
-      token = undefined;
-    }
+    const token = typeof payload.token === "string" ? payload.token : undefined;
     if (!token) return fault(400, "INVALID_BODY", "Expected a JSON body with a token.");
 
     const result = await verifySignIn(env, token, labelsFor(request));

@@ -1,5 +1,11 @@
+import { allowedBrowserOrigin, consumePublicLimit } from "./public-security.js";
 import { handleAuth } from "./auth-routes.js";
 import { encryptPayload, sha256, verifyHmac } from "./crypto.js";
+import { problem, readJson } from "./http.js";
+import type { IngestMessage } from "./ingest.js";
+import { consumeOutboundRate, deliverDestinationAttempt } from "./outbound.js";
+import { loadDestination } from "./destinations.js";
+import { handleV1 } from "./v1.js";
 import {
   DELIVERY_LEASE_MS,
   SafeDeliveryReason,
@@ -7,14 +13,7 @@ import {
   retryState,
 } from "@eventforge/core";
 export { SessionAuthority, authorityObjectName, sessionAuthorityFor } from "./session-authority.js";
-
-type IngestMessage = {
-  deliveryId: string;
-  workspaceId: string;
-  installationId: string;
-  provider: string;
-  correlationId: string;
-};
+export type { IngestMessage } from "./ingest.js";
 type Surface = "api" | "hooks" | "preview" | "unknown";
 type WaitlistPayload = {
   email?: unknown;
@@ -101,31 +100,9 @@ export function surfaceFor(hostname: string, environment: string): Surface {
   return "unknown";
 }
 
-function problem(
-  status: number,
-  code: string,
-  detail: string,
-  requestId = crypto.randomUUID(),
-  extraHeaders?: HeadersInit,
-): Response {
-  return Response.json(
-    { type: "about:blank", title: code, status, code, retryable: status >= 500, detail, requestId },
-    {
-      status,
-      headers: { "content-type": "application/problem+json", ...extraHeaders },
-    },
-  );
-}
-
-const WAITLIST_ORIGINS = new Set([
-  "https://eventforge.dev",
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-]);
-
-function waitlistCors(origin: string | null): HeadersInit {
+function waitlistCors(origin: string | null, environment: string): HeadersInit {
   const headers: HeadersInit = { vary: "Origin" };
-  if (origin && WAITLIST_ORIGINS.has(origin)) {
+  if (origin && allowedBrowserOrigin(origin, environment)) {
     headers["access-control-allow-origin"] = origin;
     headers["access-control-allow-methods"] = "POST, OPTIONS";
     headers["access-control-allow-headers"] = "content-type";
@@ -143,8 +120,8 @@ export function normalizeWaitlistEmail(value: unknown): string | null {
 
 async function joinWaitlist(request: Request, env: Env): Promise<Response> {
   const origin = request.headers.get("origin");
-  const cors = waitlistCors(origin);
-  if (origin && !WAITLIST_ORIGINS.has(origin))
+  const cors = waitlistCors(origin, env.ENVIRONMENT);
+  if (origin && !allowedBrowserOrigin(origin, env.ENVIRONMENT))
     return problem(
       403,
       "ORIGIN_NOT_ALLOWED",
@@ -158,24 +135,15 @@ async function joinWaitlist(request: Request, env: Env): Promise<Response> {
       ...cors,
       allow: "POST, OPTIONS",
     });
-  const contentLength = Number(request.headers.get("content-length") ?? 0);
-  if (contentLength > 8192)
-    return problem(
-      413,
-      "PAYLOAD_TOO_LARGE",
-      "Waitlist submissions must be smaller than 8 KB.",
-      undefined,
-      cors,
-    );
-
-  let payload: WaitlistPayload;
-  try {
-    const raw = await request.text();
-    if (raw.length > 8192) throw new Error("payload too large");
-    payload = JSON.parse(raw) as WaitlistPayload;
-  } catch {
-    return problem(400, "INVALID_JSON", "Waitlist submission must be valid JSON.", undefined, cors);
+  const body = await readJson(request, 8192);
+  if (!body.ok) {
+    const response = body.response;
+    for (const [name, value] of Object.entries(cors)) response.headers.set(name, value);
+    return response;
   }
+  if (!body.value || typeof body.value !== "object" || Array.isArray(body.value))
+    return problem(400, "INVALID_JSON", "Expected a JSON object.", undefined, cors);
+  const payload = body.value as WaitlistPayload;
 
   // Honeypot: pretend bot submissions succeeded without persisting them.
   if (typeof payload.website === "string" && payload.website.trim())
@@ -193,15 +161,8 @@ async function joinWaitlist(request: Request, env: Env): Promise<Response> {
     );
 
   const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  const rateLimitSecret = env.WAITLIST_RATE_LIMIT_SECRET || `local-${env.ENVIRONMENT}`;
-  const ipHash = await sha256(`${rateLimitSecret}:${ip}`);
-  const threshold = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const recent = await env.CONTROL_DB.prepare(
-    "select count(*) as count from waitlist_signups where ip_hash = ? and created_at > ?",
-  )
-    .bind(ipHash, threshold)
-    .first<{ count: number }>();
-  if (Number(recent?.count ?? 0) >= 5)
+  const ipHash = await sha256(`${env.WAITLIST_RATE_LIMIT_SECRET}:waitlist:${ip}`);
+  if (!(await consumePublicLimit(env, "waitlist", ip, 5)))
     return problem(429, "RATE_LIMITED", "Please try again later.", undefined, {
       ...cors,
       "retry-after": "3600",
@@ -210,15 +171,12 @@ async function joinWaitlist(request: Request, env: Env): Promise<Response> {
   const now = new Date().toISOString();
   const source =
     typeof payload.source === "string" ? payload.source.trim().slice(0, 64) || "direct" : "direct";
-  const result = await env.CONTROL_DB.prepare(
+  await env.CONTROL_DB.prepare(
     "insert into waitlist_signups (id,email,source,consent_at,ip_hash,created_at) values (?,?,?,?,?,?) on conflict(email) do nothing",
   )
     .bind(crypto.randomUUID(), email, source, now, ipHash, now)
     .run();
-  return Response.json(
-    { accepted: true, alreadyRegistered: Number(result.meta.changes ?? 0) === 0 },
-    { status: 202, headers: cors },
-  );
+  return Response.json({ accepted: true }, { status: 202, headers: cors });
 }
 
 async function publishOutbox(env: Env, limit = 100): Promise<number> {
@@ -296,7 +254,10 @@ async function verifiedInstallationById(
 }
 
 class DeliveryFailure extends Error {
-  constructor(readonly reason: SafeDeliveryReason) {
+  constructor(
+    readonly reason: SafeDeliveryReason,
+    readonly retryAfterSeconds?: number,
+  ) {
     super(reason);
   }
 }
@@ -353,7 +314,7 @@ export async function reconcileDeliveries(env: Env, limit = 100): Promise<number
   const now = new Date();
   const staleBefore = new Date(now.getTime() - DELIVERY_LEASE_MS).toISOString();
   const stale = await env.EVENTS_DB.prepare(
-    "select id,workspace_id,installation_id,provider,correlation_id,status,attempts_count,first_attempt_at,payload_ref,payload_checksum from deliveries where (status in ('accepted','queued') and created_at <= ?) or (status = 'processing' and lease_expires_at <= ?) or (status = 'retrying' and next_retry_at <= ?) limit ?",
+    "select id,workspace_id,installation_id,provider,correlation_id,status,attempts_count,first_attempt_at,payload_ref,payload_checksum,destination_id,event_id from deliveries where (status in ('accepted','queued') and created_at <= ?) or (status = 'processing' and lease_expires_at <= ?) or (status = 'retrying' and next_retry_at <= ?) limit ?",
   )
     .bind(staleBefore, now.toISOString(), now.toISOString(), limit)
     .all<{
@@ -367,6 +328,8 @@ export async function reconcileDeliveries(env: Env, limit = 100): Promise<number
       first_attempt_at: string | null;
       payload_ref: string;
       payload_checksum: string;
+      destination_id: string | null;
+      event_id: string | null;
     }>();
   let reconciled = 0;
   for (const row of stale.results) {
@@ -376,6 +339,8 @@ export async function reconcileDeliveries(env: Env, limit = 100): Promise<number
       installationId: row.installation_id,
       provider: row.provider,
       correlationId: row.correlation_id,
+      destinationId: row.destination_id ?? undefined,
+      eventId: row.event_id ?? undefined,
     };
     const installation = await verifiedInstallationById(env, row.installation_id, row.provider);
     if (!installation || installation.workspace_id !== row.workspace_id) {
@@ -412,6 +377,8 @@ export async function reconcileDeliveries(env: Env, limit = 100): Promise<number
       reconciled += 1;
       continue;
     }
+    // Destination POSTs stay off until the durable-delivery flag is raised.
+    if (row.destination_id && String(env.DURABLE_DELIVERY_ENABLED) !== "true") continue;
     const timestamp = now.toISOString();
     const transition = await env.EVENTS_DB.prepare(
       "update deliveries set status = 'queued', safe_reason = 'reconciliation', next_retry_at = null, lease_expires_at = null, updated_at = ? where id = ? and workspace_id = ? and ((status in ('accepted','queued') and created_at <= ?) or (status = 'processing' and lease_expires_at <= ?) or (status = 'retrying' and next_retry_at <= ?))",
@@ -543,7 +510,7 @@ export default {
       if (url.pathname === "/mcp" && url.hostname === "api.eventforge.dev") return mcp(request);
       if (surface === "unknown") return problem(404, "NOT_FOUND", "Route not found.");
       if ((surface === "api" || surface === "preview") && url.pathname === "/v1/waitlist")
-        return joinWaitlist(request, env);
+        return await joinWaitlist(request, env);
       if (request.method === "GET" && url.pathname === "/health")
         return Response.json({
           ok: true,
@@ -558,14 +525,10 @@ export default {
       )
         return ingestCanary(request, env);
       if ((surface === "api" || surface === "preview") && url.pathname.startsWith("/api/auth/"))
-        return handleAuth(request, env, url);
+        return await handleAuth(request, env, url);
 
       if ((surface === "api" || surface === "preview") && url.pathname.startsWith("/v1/"))
-        return problem(
-          503,
-          "AUTH_GATED",
-          "Authentication and tenant repositories are not enabled yet.",
-        );
+        return await handleV1(request, env);
       return problem(404, "NOT_FOUND", "Route not found.");
     } catch (error) {
       console.error(
@@ -604,7 +567,7 @@ export default {
           continue;
         }
         const delivery = await env.EVENTS_DB.prepare(
-          "select attempts_count, first_attempt_at, status, payload_ref, payload_checksum from deliveries where id = ? and workspace_id = ? and installation_id = ?",
+          "select attempts_count, first_attempt_at, status, payload_ref, payload_checksum, destination_id from deliveries where id = ? and workspace_id = ? and installation_id = ?",
         )
           .bind(body.deliveryId, body.workspaceId, body.installationId)
           .first<{
@@ -613,47 +576,122 @@ export default {
             status: string;
             payload_ref: string;
             payload_checksum: string;
+            destination_id: string | null;
           }>();
-        if (!delivery || ["completed", "quarantined", "rejected"].includes(delivery.status)) {
+        if (!delivery) {
           message.ack();
           continue;
         }
-        const budget = retryState({
-          attempts: Number(delivery.attempts_count),
-          firstAttemptAt: delivery.first_attempt_at
-            ? Date.parse(delivery.first_attempt_at)
-            : undefined,
-          now: now.getTime(),
-          reason: "upstream_unavailable",
-          jitterKey: body.deliveryId,
-        });
-        if (budget.state === "quarantined") {
-          await quarantine(env, body, budget.reason, now);
+        const replay = body.operation === "replay";
+        if (
+          delivery.status === "rejected" ||
+          (!replay && ["completed", "quarantined"].includes(delivery.status))
+        ) {
           message.ack();
           continue;
         }
-        const attempt = Number(delivery.attempts_count) + 1;
+        if (!replay) {
+          const budget = retryState({
+            attempts: Number(delivery.attempts_count),
+            firstAttemptAt: delivery.first_attempt_at
+              ? Date.parse(delivery.first_attempt_at)
+              : undefined,
+            now: now.getTime(),
+            reason: "upstream_unavailable",
+            jitterKey: body.deliveryId,
+          });
+          if (budget.state === "quarantined") {
+            await quarantine(env, body, budget.reason, now);
+            message.ack();
+            continue;
+          }
+        }
+        const destinationId = delivery.destination_id ?? body.destinationId;
+        if (destinationId && String(env.DURABLE_DELIVERY_ENABLED) !== "true") {
+          message.ack();
+          continue;
+        }
+        const destination = destinationId
+          ? await loadDestination(env, body.workspaceId, destinationId)
+          : undefined;
+        if (destinationId && (!destination || destination.status === "disabled")) {
+          await quarantine(env, body, "validation_error", now);
+          message.ack();
+          continue;
+        }
+        if (destination?.status === "paused") {
+          message.retry({ delaySeconds: 1 });
+          continue;
+        }
         const timestamp = now.toISOString();
         const lease = new Date(now.getTime() + DELIVERY_LEASE_MS).toISOString();
-        const claim = await env.EVENTS_DB.prepare(
-          "update deliveries set status = 'processing', attempts_count = attempts_count + 1, first_attempt_at = coalesce(first_attempt_at, ?), lease_expires_at = ?, updated_at = ? where id = ? and workspace_id = ? and installation_id = ? and attempts_count = ? and (status in ('accepted','queued','retrying') or (status = 'processing' and lease_expires_at <= ?))",
-        )
-          .bind(
-            timestamp,
-            lease,
-            timestamp,
-            body.deliveryId,
-            body.workspaceId,
-            body.installationId,
-            delivery.attempts_count,
-            timestamp,
-          )
-          .run();
+        const claim = replay
+          ? await env.EVENTS_DB.prepare(
+              "update deliveries set status = 'processing', lease_expires_at = ?, updated_at = ? where id = ? and workspace_id = ? and installation_id = ? and (status in ('accepted','queued','retrying','quarantined','completed') or (status = 'processing' and lease_expires_at <= ?))",
+            )
+              .bind(
+                lease,
+                timestamp,
+                body.deliveryId,
+                body.workspaceId,
+                body.installationId,
+                timestamp,
+              )
+              .run()
+          : await env.EVENTS_DB.prepare(
+              "update deliveries set status = 'processing', attempts_count = attempts_count + 1, first_attempt_at = coalesce(first_attempt_at, ?), lease_expires_at = ?, updated_at = ? where id = ? and workspace_id = ? and installation_id = ? and attempts_count = ? and (status in ('accepted','queued','retrying') or (status = 'processing' and lease_expires_at <= ?))",
+            )
+              .bind(
+                timestamp,
+                lease,
+                timestamp,
+                body.deliveryId,
+                body.workspaceId,
+                body.installationId,
+                delivery.attempts_count,
+                timestamp,
+              )
+              .run();
         if (Number(claim.meta.changes ?? 0) === 0) {
           // Another consumer owns the lease or has already reached a terminal state.
           message.ack();
           continue;
         }
+        if (
+          destination &&
+          !(await consumeOutboundRate(env, destination.id, destination.max_rate_per_second, now))
+        ) {
+          if (replay) {
+            await env.EVENTS_DB.prepare(
+              "update deliveries set status = ?, lease_expires_at = null, updated_at = ? where id = ? and workspace_id = ?",
+            )
+              .bind(body.restoreStatus ?? "completed", timestamp, body.deliveryId, body.workspaceId)
+              .run();
+          } else {
+            await env.EVENTS_DB.prepare(
+              "update deliveries set status = 'retrying', attempts_count = max(attempts_count - 1, 0), first_attempt_at = case when attempts_count <= 1 then null else first_attempt_at end, next_retry_at = ?, lease_expires_at = null, updated_at = ? where id = ? and workspace_id = ? and status = 'processing'",
+            )
+              .bind(
+                new Date(now.getTime() + 1_000).toISOString(),
+                timestamp,
+                body.deliveryId,
+                body.workspaceId,
+              )
+              .run();
+          }
+          message.retry({ delaySeconds: 1 });
+          continue;
+        }
+        const lastAttempt = replay
+          ? await env.EVENTS_DB.prepare(
+              "select max(attempt_number) as max_attempt from delivery_attempts where workspace_id = ? and delivery_id = ?",
+            )
+              .bind(body.workspaceId, body.deliveryId)
+              .first<{ max_attempt: number | null }>()
+          : null;
+        const attempt = replay
+          ? Number(lastAttempt?.max_attempt ?? delivery.attempts_count) + 1
+          : Number(delivery.attempts_count) + 1;
         await env.EVENTS_DB.prepare(
           "insert into delivery_attempts (id,workspace_id,delivery_id,attempt_number,operation,status,billing_effect,lease_expires_at,started_at) values (?,?,?,?,?,'processing','none',?,?)",
         )
@@ -662,11 +700,59 @@ export default {
             body.workspaceId,
             body.deliveryId,
             attempt,
-            "process",
+            replay ? "replay" : "process",
             lease,
             timestamp,
           )
           .run();
+        if (destination) {
+          const result = await deliverDestinationAttempt(env, destination, {
+            payloadRef: delivery.payload_ref,
+            payloadChecksum: delivery.payload_checksum,
+            deliveryId: body.deliveryId,
+          });
+          if (result.state !== "success") {
+            await env.EVENTS_DB.prepare(
+              "update delivery_attempts set status = 'failed', safe_reason = ?, response_code = ?, latency_ms = ?, finished_at = ?, lease_expires_at = null where workspace_id = ? and delivery_id = ? and attempt_number = ?",
+            )
+              .bind(
+                result.reason,
+                result.status ?? null,
+                result.latencyMs,
+                new Date().toISOString(),
+                body.workspaceId,
+                body.deliveryId,
+                attempt,
+              )
+              .run();
+            throw new DeliveryFailure(result.reason, result.retryAfterSeconds);
+          }
+          const outcomeKey = deliveryIdempotencyKey(body.workspaceId, body.deliveryId);
+          const finished = new Date().toISOString();
+          await env.EVENTS_DB.batch([
+            env.EVENTS_DB.prepare(
+              "insert into delivery_outcomes (id,workspace_id,delivery_id,idempotency_key,created_at) values (?,?,?,?,?) on conflict(workspace_id,idempotency_key) do nothing",
+            ).bind(crypto.randomUUID(), body.workspaceId, body.deliveryId, outcomeKey, finished),
+            env.EVENTS_DB.prepare(
+              "insert into delivery_usage_records (id,workspace_id,delivery_id,idempotency_key,created_at) values (?,?,?,?,?) on conflict(workspace_id,idempotency_key) do nothing",
+            ).bind(crypto.randomUUID(), body.workspaceId, body.deliveryId, outcomeKey, finished),
+            env.EVENTS_DB.prepare(
+              "update delivery_attempts set status = 'completed', response_code = ?, latency_ms = ?, finished_at = ?, lease_expires_at = null where workspace_id = ? and delivery_id = ? and attempt_number = ?",
+            ).bind(
+              result.status,
+              result.latencyMs,
+              finished,
+              body.workspaceId,
+              body.deliveryId,
+              attempt,
+            ),
+            env.EVENTS_DB.prepare(
+              "update deliveries set status = 'completed', completed_at = ?, lease_expires_at = null, updated_at = ? where id = ? and workspace_id = ?",
+            ).bind(finished, finished, body.deliveryId, body.workspaceId),
+          ]);
+          message.ack();
+          continue;
+        }
         const payload = await env.PAYLOADS.head(delivery.payload_ref);
         if (!payload) throw new DeliveryFailure("payload_unavailable");
         if (
@@ -692,6 +778,21 @@ export default {
         message.ack();
       } catch (error) {
         const reason = safeReason(error);
+        const retryAfter = error instanceof DeliveryFailure ? error.retryAfterSeconds : undefined;
+        if (body.operation === "replay") {
+          await env.EVENTS_DB.prepare(
+            "update deliveries set status = ?, lease_expires_at = null, updated_at = ? where id = ? and workspace_id = ?",
+          )
+            .bind(
+              body.restoreStatus ?? "completed",
+              now.toISOString(),
+              body.deliveryId,
+              body.workspaceId,
+            )
+            .run();
+          message.ack();
+          continue;
+        }
         const delivery = await env.EVENTS_DB.prepare(
           "select attempts_count, first_attempt_at from deliveries where id = ? and workspace_id = ?",
         )
@@ -710,18 +811,19 @@ export default {
           await quarantine(env, body, next.reason, now);
           message.ack();
         } else {
+          const delaySeconds = retryAfter ?? next.delaySeconds!;
           await env.EVENTS_DB.prepare(
             "update deliveries set status = 'retrying', safe_reason = ?, next_retry_at = ?, lease_expires_at = null, updated_at = ? where id = ? and workspace_id = ?",
           )
             .bind(
               reason,
-              new Date(now.getTime() + next.delaySeconds! * 1_000).toISOString(),
+              new Date(now.getTime() + delaySeconds * 1_000).toISOString(),
               now.toISOString(),
               body.deliveryId,
               body.workspaceId,
             )
             .run();
-          message.retry({ delaySeconds: next.delaySeconds });
+          message.retry({ delaySeconds });
         }
       }
     }
@@ -732,7 +834,13 @@ export default {
     ctx: ExecutionContext,
   ): Promise<void> {
     ctx.waitUntil(
-      Promise.all([publishOutbox(env), reconcileDeliveries(env)]).then(() => undefined),
+      Promise.all([
+        publishOutbox(env),
+        reconcileDeliveries(env),
+        env.CONTROL_DB.prepare("delete from public_request_limits where expires_at < ?")
+          .bind(Date.now())
+          .run(),
+      ]).then(() => undefined),
     );
   },
 } satisfies ExportedHandler<Env, IngestMessage>;

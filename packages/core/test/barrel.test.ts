@@ -20,8 +20,10 @@ const NAMESPACED = [
   "reactionWorker",
   "replayAudit",
   "sdk",
+  "standardWebhooks",
   "telemetry",
   "timeline",
+  "webhookDestinations",
 ] as const;
 
 // Consumers (apps/control-plane, apps/cloudflare, packages/mcp-server) import

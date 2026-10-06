@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { encryptPayload, sha256, verifyHmac } from "../src/crypto.js";
+import {
+  decryptPayload,
+  encryptPayload,
+  encryptSecret,
+  decryptSecret,
+  sha256,
+  verifyHmac,
+} from "../src/crypto.js";
 
 describe("Workers crypto boundaries", () => {
   it("verifies a valid HMAC and rejects malformed signatures", async () => {
@@ -29,5 +36,9 @@ describe("Workers crypto boundaries", () => {
     ]);
     expect(first.nonce).not.toBe(second.nonce);
     await expect(sha256(payload)).resolves.toHaveLength(64);
+    const decrypted = await decryptPayload(first.body, key, first.nonce);
+    expect(new TextDecoder().decode(decrypted)).toBe("sensitive");
+    const wrapped = await encryptSecret("whsec_test", key);
+    await expect(decryptSecret(wrapped.ciphertext, wrapped.nonce, key)).resolves.toBe("whsec_test");
   });
 });

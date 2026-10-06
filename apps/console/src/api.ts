@@ -1,3 +1,6 @@
+import { getRequestToken } from "./SignInPage";
+
+const REQUEST_TOKEN_HEADER = "x-eventforge-request-token";
 const configuredBaseUrl = import.meta.env.VITE_EVENTFORGE_API_URL;
 
 declare global {
@@ -39,7 +42,10 @@ function string(value: unknown, field: string): string {
 }
 
 function optionalString(value: unknown, field: string): string | undefined {
-  return value === undefined ? undefined : string(value, field);
+  // D1 JSON columns serialize SQL NULL as JSON null. Treat that as absent so a
+  // delivery without a safeReason (or similar optional field) still renders.
+  if (value === undefined || value === null) return undefined;
+  return string(value, field);
 }
 
 function strings(value: unknown, field: string): string[] {
@@ -59,12 +65,20 @@ function baseUrl(): string {
   return configuredBaseUrl ?? window.eventforgeDesktop?.controlPlaneUrl ?? "http://127.0.0.1:4310";
 }
 
-async function request<T>(path: string, parser: Parser<T>, init: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  parser: Parser<T>,
+  init: RequestInit = {},
+  origin: "control-plane" | "hosted" = "control-plane",
+): Promise<T> {
   let response: Response;
   try {
     const headers = new Headers(init.headers);
     if (init.body !== undefined && !headers.has("content-type"))
       headers.set("content-type", "application/json");
+    const requestToken = getRequestToken();
+    if (requestToken && !headers.has(REQUEST_TOKEN_HEADER))
+      headers.set(REQUEST_TOKEN_HEADER, requestToken);
     const desktop = window.eventforgeDesktop;
     if (desktop) {
       const result = await desktop.request(path, {
@@ -76,7 +90,10 @@ async function request<T>(path: string, parser: Parser<T>, init: RequestInit = {
         status: result.status,
       });
     } else {
-      response = await fetch(new URL(path, baseUrl()), {
+      // Hosted /v1 stays on the console origin so the SameSite=Strict session
+      // cookie is sent. The console Worker proxies that path to the API.
+      const url = origin === "hosted" ? path : new URL(path, baseUrl());
+      response = await fetch(url, {
         ...init,
         credentials: "include",
         headers,
@@ -89,6 +106,13 @@ async function request<T>(path: string, parser: Parser<T>, init: RequestInit = {
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
+    try {
+      const problem = JSON.parse(detail) as { detail?: unknown };
+      if (typeof problem.detail === "string" && problem.detail)
+        throw new ApiError(problem.detail, response.status);
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+    }
     throw new ApiError(detail || `Request failed with status ${response.status}.`, response.status);
   }
 
@@ -229,6 +253,217 @@ export const api = {
     }),
 };
 
+function itemsParser<T>(parser: Parser<T>, context: string): Parser<T[]> {
+  return (value) => array(parser, context)(record(value, context).items);
+}
+
+const parseInstallation: Parser<InstallationItem> = (value) => {
+  const item = record(value, "installation");
+  return {
+    id: string(item.id, "installation.id"),
+    workspaceId: string(item.workspaceId, "installation.workspaceId"),
+    provider: string(item.provider, "installation.provider"),
+    installationKey: string(item.installationKey, "installation.installationKey"),
+    status: string(item.status, "installation.status"),
+  };
+};
+
+const parseDestination: Parser<DestinationItem> = (value) => {
+  const item = record(value, "destination");
+  return {
+    id: string(item.id, "destination.id"),
+    workspaceId: string(item.workspaceId, "destination.workspaceId"),
+    installationId: string(item.installationId, "destination.installationId"),
+    url: string(item.url, "destination.url"),
+    description: optionalString(item.description, "destination.description") ?? "",
+    eventTypes: strings(item.eventTypes, "destination.eventTypes"),
+    channels: strings(item.channels, "destination.channels"),
+    maxRatePerSecond: typeof item.maxRatePerSecond === "number" ? item.maxRatePerSecond : 10,
+    mode: string(item.mode, "destination.mode"),
+    status: string(item.status, "destination.status"),
+    secretHint: optionalString(item.secretHint, "destination.secretHint") ?? "",
+    secret: optionalString(item.secret, "destination.secret"),
+  };
+};
+
+const parseMember: Parser<MemberItem> = (value) => {
+  const item = record(value, "member");
+  return {
+    identityId: string(item.identityId, "member.identityId"),
+    email: string(item.email, "member.email"),
+    role: string(item.role, "member.role"),
+    createdAt: string(item.createdAt, "member.createdAt"),
+  };
+};
+
+const parseInvitation: Parser<InvitationItem> = (value) => {
+  const item = record(value, "invitation");
+  return {
+    id: string(item.id, "invitation.id"),
+    workspaceId: string(item.workspaceId, "invitation.workspaceId"),
+    email: string(item.email, "invitation.email"),
+    role: string(item.role, "invitation.role"),
+    identityId: optionalString(item.identityId, "invitation.identityId"),
+    acceptedAt: optionalString(item.acceptedAt, "invitation.acceptedAt"),
+  };
+};
+
+const parsePublish: Parser<PublishResult> = (value) => {
+  const item = record(value, "publish");
+  return {
+    accepted: item.accepted === true,
+    duplicate: item.duplicate === true,
+    eventId: string(item.eventId, "publish.eventId"),
+    deliveryIds: strings(item.deliveryIds ?? [], "publish.deliveryIds"),
+    matchedDestinationCount:
+      typeof item.matchedDestinationCount === "number" ? item.matchedDestinationCount : 0,
+  };
+};
+
+const parseDelivery: Parser<DeliveryLogItem> = (value) => {
+  const item = record(value, "delivery");
+  return {
+    id: string(item.id, "delivery.id"),
+    status: string(item.status, "delivery.status"),
+    eventId: optionalString(item.eventId, "delivery.eventId"),
+    destinationId: optionalString(item.destinationId, "delivery.destinationId"),
+    attemptsCount:
+      typeof item.attemptsCount === "number" ? item.attemptsCount : Number(item.attemptsCount ?? 0),
+    safeReason: optionalString(item.safeReason, "delivery.safeReason"),
+    createdAt: string(item.createdAt, "delivery.createdAt"),
+  };
+};
+
+function parsePermission(value: unknown, field: string): ApiKeyPermission {
+  if (value === "none" || value === "read" || value === "write") return value;
+  throw new ApiError(`Invalid response field: ${field}.`);
+}
+
+const parseApiKey: Parser<ApiKeyItem> = (value) => {
+  const item = record(value, "apiKey");
+  const permissions = record(item.permissions, "apiKey.permissions");
+  return {
+    id: string(item.id, "apiKey.id"),
+    workspaceId: string(item.workspaceId, "apiKey.workspaceId"),
+    name: string(item.name, "apiKey.name"),
+    prefix: string(item.prefix, "apiKey.prefix"),
+    permissions: {
+      events: parsePermission(permissions.events, "apiKey.permissions.events"),
+      destinations: parsePermission(permissions.destinations, "apiKey.permissions.destinations"),
+      deliveries: parsePermission(permissions.deliveries, "apiKey.permissions.deliveries"),
+      replay: parsePermission(permissions.replay, "apiKey.permissions.replay"),
+    },
+    lastUsedAt: optionalString(item.lastUsedAt, "apiKey.lastUsedAt"),
+    createdAt: string(item.createdAt, "apiKey.createdAt"),
+    token: optionalString(item.token, "apiKey.token"),
+  };
+};
+
+function hostedRequest<T>(path: string, parser: Parser<T>, init: RequestInit = {}): Promise<T> {
+  return request(path, parser, init, "hosted");
+}
+
+export const webhookApi = {
+  installations: (workspaceId: string, signal?: AbortSignal) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/installations`,
+      itemsParser(parseInstallation, "installations"),
+      { signal },
+    ),
+  createInstallation: (workspaceId: string, signal?: AbortSignal) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/installations`,
+      parseInstallation,
+      { method: "POST", body: JSON.stringify({ provider: "custom" }), signal },
+    ),
+  destinations: (workspaceId: string, installationId: string, signal?: AbortSignal) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/installations/${encodeURIComponent(installationId)}/destinations`,
+      itemsParser(parseDestination, "destinations"),
+      { signal },
+    ),
+  createDestination: (
+    workspaceId: string,
+    installationId: string,
+    input: { url: string; description?: string; eventTypes?: string[] },
+    signal?: AbortSignal,
+  ) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/installations/${encodeURIComponent(installationId)}/destinations`,
+      parseDestination,
+      { method: "POST", body: JSON.stringify(input), signal },
+    ),
+  publish: (
+    workspaceId: string,
+    input: { installationId: string; eventType: string; payload: Record<string, unknown> },
+    signal?: AbortSignal,
+  ) =>
+    hostedRequest(`/v1/workspaces/${encodeURIComponent(workspaceId)}/events`, parsePublish, {
+      method: "POST",
+      body: JSON.stringify(input),
+      signal,
+      headers: { "Idempotency-Key": idempotencyKey("publish", input.installationId) },
+    }),
+  deliveries: (workspaceId: string, signal?: AbortSignal) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/deliveries`,
+      itemsParser(parseDelivery, "deliveries"),
+      { signal },
+    ),
+  replay: (workspaceId: string, deliveryId: string, reason: string, signal?: AbortSignal) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/deliveries/${encodeURIComponent(deliveryId)}/replay`,
+      passThrough,
+      { method: "POST", body: JSON.stringify({ reason }), signal },
+    ),
+  members: (workspaceId: string, signal?: AbortSignal) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/members`,
+      itemsParser(parseMember, "members"),
+      { signal },
+    ),
+  invite: (
+    workspaceId: string,
+    input: { email: string; role: "admin" | "operator" | "viewer" },
+    signal?: AbortSignal,
+  ) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/invitations`,
+      parseInvitation,
+      { method: "POST", body: JSON.stringify(input), signal },
+    ),
+  apiKeys: (workspaceId: string, signal?: AbortSignal) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/api-keys`,
+      itemsParser(parseApiKey, "apiKeys"),
+      { signal },
+    ),
+  createApiKey: (
+    workspaceId: string,
+    input: {
+      name: string;
+      permissions?: {
+        events?: ApiKeyPermission;
+        destinations?: ApiKeyPermission;
+        deliveries?: ApiKeyPermission;
+        replay?: ApiKeyPermission;
+      };
+    },
+    signal?: AbortSignal,
+  ) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/api-keys`,
+      parseApiKey,
+      { method: "POST", body: JSON.stringify(input), signal },
+    ),
+  revokeApiKey: (workspaceId: string, keyId: string, signal?: AbortSignal) =>
+    hostedRequest(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/api-keys/${encodeURIComponent(keyId)}`,
+      passThrough,
+      { method: "DELETE", signal },
+    ),
+};
+
 export type EventItem = {
   id: string;
   provider: string;
@@ -263,4 +498,71 @@ export type ForgeItem = {
   requestedScopes: string[];
   validation: { passed: boolean; findings: string[] };
   generatedFiles: Array<{ path: string; content: string }>;
+};
+export type InstallationItem = {
+  id: string;
+  workspaceId: string;
+  provider: string;
+  installationKey: string;
+  status: string;
+};
+export type DestinationItem = {
+  id: string;
+  workspaceId: string;
+  installationId: string;
+  url: string;
+  description: string;
+  eventTypes: string[];
+  channels: string[];
+  maxRatePerSecond: number;
+  mode: string;
+  status: string;
+  secretHint: string;
+  secret?: string;
+};
+export type PublishResult = {
+  accepted: boolean;
+  duplicate: boolean;
+  eventId: string;
+  deliveryIds: string[];
+  matchedDestinationCount: number;
+};
+export type DeliveryLogItem = {
+  id: string;
+  status: string;
+  eventId?: string;
+  destinationId?: string;
+  attemptsCount: number;
+  safeReason?: string;
+  createdAt: string;
+};
+export type MemberItem = {
+  identityId: string;
+  email: string;
+  role: string;
+  createdAt: string;
+};
+export type InvitationItem = {
+  id: string;
+  workspaceId: string;
+  email: string;
+  role: string;
+  identityId?: string;
+  acceptedAt?: string;
+};
+export type ApiKeyPermission = "none" | "read" | "write";
+export type ApiKeyItem = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  prefix: string;
+  permissions: {
+    events: ApiKeyPermission;
+    destinations: ApiKeyPermission;
+    deliveries: ApiKeyPermission;
+    replay: ApiKeyPermission;
+  };
+  lastUsedAt?: string;
+  createdAt: string;
+  token?: string;
 };

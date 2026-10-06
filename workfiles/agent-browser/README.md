@@ -353,3 +353,141 @@ Reusable pattern: after enabling production auth, curl
 `/api/auth/config` on the console origin (not the API host) so you are testing
 the same-origin proxy and the cookie domain together. Confirm `captchaRequired`
 is true before calling the login form done.
+
+## 2026-08-28 — destination portal, invite, replay reason
+
+- API production `225f56f9`, preview `8bcf886d`, console `ba6e40a6`.
+  `PUBLIC_INGRESS_ENABLED`, `DURABLE_DELIVERY_ENABLED`, `MONITORING_ENABLED`
+  remain `"false"`. Health: `ingress: gated`. Unauthenticated `/v1` is
+  `503 AUTH_GATED`.
+- `https://eventforge.dev/console` still the sign-in SPA (Turnstile, email
+  link). Destination portal is behind session; bundle includes "Add endpoint"
+  and "Signing secret". Console Worker proxies `/v1` same-origin.
+- Production CONTROL_DB now has owner `jorge@pox.me` on workspace EventForge
+  (`77fe6619-…`). First sign-in is the email link (no password row yet).
+- Screenshots: `portal-prod-landing.png`, `portal-prod-console-signin.png`,
+  `portal-prod-features.png`, `portal-prod-waitlist.png`, plus `-mobile`
+  variants at 390×844.
+- Could not click through Destinations live: no session in this agent run.
+
+Reusable pattern: after a webhook API deploy, curl `/health` and an
+unauthenticated `/v1/workspaces/:id/installations` before opening `/console`.
+Confirm the three delivery flags are still false unless a signed preview
+canary is in progress. Destination UI verification requires a session cookie
+on `eventforge.dev` (SameSite=Strict via the `/v1` proxy).
+
+## 2026-08-28 — local Destinations E2E on https://dev.eventforge.dev
+
+- Stack: `./dev.sh start --remote` (preview D1/R2, Worker local). Named tunnel
+  `eventforge-dev` fronts Vite at `https://dev.eventforge.dev`. This Mac's
+  getaddrinfo still NXDOMAINs the name; `dig @1.1.1.1` and `curl --resolve`
+  succeed. Browser session: `eventforge-local-dev` with
+  `--host-resolver-rules=MAP dev.eventforge.dev 172.67.170.94`.
+- Signed in as `jorge@pox.me` via `POST /api/auth/request` (`devToken` because
+  `ENVIRONMENT=development`, no EMAIL binding) then
+  `https://dev.eventforge.dev/console?token=…`.
+- UI: **New route** → `custom · 0146bacd` (`ad404b28-…`). **Add endpoint**
+  `https://webhook.site/d87e2471-6ca0-407b-9504-c5bf5b3a1510` (secret shown
+  once). **Send event** `invoice.paid` → `202` accepted event
+  `8187a7b5-6cdf-436c-b2d4-9e7235415c9e` for 1 endpoint. Delivery
+  `ae46d663-…` status `accepted`, 0 attempts.
+- First send-event click missed because the form sat below the 800×600 fold;
+  `scrollintoview` then click. Replay `503`: "Durable delivery release gates
+  have not passed." webhook.site inbox: 0 requests.
+- UI gaps fixed: `optionalString` now treats JSON `null` as absent (D1
+  `safe_reason` was `null`, list crashed with `Invalid response field:
+  delivery.safeReason.`); Destinations shows Loading… instead of empty lists
+  while remote D1 is in flight. `dev.sh` always starts the tunnel.
+- Screenshots: `local-dev-destinations-empty.png`,
+  `local-dev-endpoint-added.png`, `local-dev-send-event-form.png`,
+  `local-dev-delivery-accepted.png`, `local-dev-replay-gated.png`,
+  `local-dev-operations.png`.
+- Production flags untouched. Do not use `eventforge.dev` for this loop.
+
+Reusable pattern: build against `https://dev.eventforge.dev`, not production.
+If getaddrinfo fails, start the tunnel anyway and MAP the host in Chrome.
+Always `scrollintoview` before clicking Destinations actions below the fold.
+Request a `devToken` from `/api/auth/request` on the public origin; the SPA
+holds `requestToken` in memory so a full reload requires a new link.
+
+## 2026-08-28 — admin dashboard sidebar on https://dev.eventforge.dev
+
+- Signed in as `jorge@pox.me`. Hosted console is now a persistent **Sidebar**
+  (`nav[aria-label="Sidebar"]`) with one active view: Routes, Endpoints,
+  Send event, Deliveries, Members, API keys, Operations.
+- Default view **Routes**: existing `custom · 0146bacd-… · active`. **New route**
+  is the primary control. Other view headings are not on the page.
+- **Endpoints**: route select + Add endpoint; existing webhook.site destination.
+- **Send a test event**: invoice.paid + JSON payload + Send event.
+- **Deliveries**: accepted event still listed; Replay present.
+- **Members**: `jorge@pox.me · owner` + Invite form.
+- **API keys**: empty list then **Create key** → token shown once, list
+  `publisher · efk_f098e67c… · Never used`. Production flags untouched.
+- **Operations**: existing command center (`Run GitHub CI demo`) mounts as the
+  last sidebar view; sidebar stays.
+- Mobile 390×844: sidebar stacks above the pane; Routes heading still unique.
+- Screenshots: `admin-routes.png`, `admin-endpoints.png`, `admin-publish.png`,
+  `admin-deliveries.png`, `admin-members.png`, `admin-api-keys.png`,
+  `admin-api-keys-created.png`, `admin-operations.png`, `admin-routes-mobile.png`.
+
+Reusable pattern: after a dashboard change, click every sidebar item and assert
+`document.querySelectorAll('h2')` contains only that view’s heading. Create-key
+and replay stay on their own views so a one-pager dump cannot regress.
+
+
+## 2026-09-09 — auth/waitlist security acceptance
+
+Session `eventforge-security`, agent-browser 0.37.1 (latest at verification).
+
+1. Opened `http://localhost:8891/waitlist` against disposable workerd on port 8890.
+   Filled reserved test email; verified consent=false returns a consent error.
+   Set consent via the real checkbox click, submitted, and observed persistent
+   success text. No production dependency used by this local fixture.
+2. Requested a local-only devToken for a seeded identity and opened `/console`
+   with that token. Dashboard rendered; URL token was removed. Reload preserved
+   authentication. Sign out returned to the intentional loopback operations UI.
+3. Opened `https://eventforge.dev/waitlist` after deployment. Submitted reserved
+   `security-audit-20260909@example.test`, observed success; remote D1 confirmed
+   one row. A second API request returned the same `{accepted:true}` response.
+   Removed only the synthetic row after checking it.
+4. Opened `https://eventforge.dev/console`; password sign-in stayed captcha-gated;
+   email-link mode rendered. No real password, captcha bypass, or email sent.
+5. HTTP checks: malformed/null bodies return 400, hostile Origin login returns 403,
+   invalid verification token returns 400, health returns 200, console returns
+   no-store/no-referrer. Python urllib received an edge 403 on a health request;
+   curl and browser succeeded, so use the actual browser or curl for smoke checks.
+
+Reusable pattern: refresh snapshots after actions and verify actual DOM state.
+The CLI checkbox action reported success without changing checked state in this
+session; a DOM `.click()` on the observed checkbox followed by a fresh snapshot
+confirmed checked=true. Synthetic consent only; no user privacy agreement accepted.
+
+Screenshots: `screenshots/security-production-waitlist.png`,
+`screenshots/security-production-signin.png`, `screenshots/security-local-waitlist.png`.
+Local screenshot records the negative consent check. Successful local signup and
+authentication were verified through browser text and snapshots.
+
+Remaining acceptance: authorized production account for real email delivery,
+Turnstile/password success, and authenticated session/logout checks.
+
+Final console version `1b8f90c2-00c9-4304-9dd1-32ab4d28591e` fixes returning from email mode to password mode. A regression test covers captcha removal and remount.
+Production browser verified the final round trip: emailMode=true, passwordMode=true, captchaContainers=1. Disposable local servers and the audit browser session were stopped after verification.
+
+
+## 2026-09-09 — production email delivery follow-up
+
+Session `eventforge-email`, using the existing `jorge@pox.me` account with user
+authorization. The production sign-in request delivered a real message to the
+inbox (Gmail id `1a087a635294d7cc`, 19:30:05 UTC); SPF/DKIM/DMARC all passed.
+
+1. Opened the delivered link on `https://eventforge.dev/console`; did not save its
+   token in this playbook. Confirmed URL token removal and session token presence.
+2. Queried `/api/auth/session` using the browser's existing session: 200, expected
+   email, one membership. Reloaded and repeated: 200.
+3. Retried the consumed link through `/api/auth/verify`: 400 `INVALID_TOKEN`.
+4. Called `/api/auth/logout` with the request token: 200; next session request: 401.
+   Cleared this audit browser's sessionStorage and closed the browser.
+
+Email pending resolved; password/Turnstile sign-in is a separate acceptance path.
+The authenticated operations UI reported “Control plane offline”; this does not
+change the successful email delivery and authenticated-session results.

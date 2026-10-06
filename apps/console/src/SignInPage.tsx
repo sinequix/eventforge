@@ -10,9 +10,8 @@ import { Mark } from "./Mark";
 // remember has to be reset through something, and email possession is that
 // something.
 //
-// The request token returned on success is held in memory only. localStorage
-// would expose it to any XSS, and it is the second factor that stops a stolen
-// cookie from acting alone.
+// Keep the CSRF request token for this browser tab so reloads can reuse the
+// HttpOnly session cookie. Signing out clears both; the API remains authoritative.
 
 const REQUEST_TOKEN_HEADER = "x-eventforge-request-token";
 const TURNSTILE_SITE_KEY = "0x4AAAAAAD9xmwCBw00F8QF2";
@@ -30,6 +29,7 @@ type TurnstileApi = {
     },
   ) => string;
   reset: (widgetId?: string) => void;
+  remove?: (widgetId: string) => void;
 };
 
 declare global {
@@ -44,10 +44,35 @@ export type Session = {
   capabilities: Record<string, boolean>;
 };
 
+const TOKEN_STORAGE_KEY = "eventforge.requestToken";
 let requestToken: string | undefined;
+try {
+  requestToken = sessionStorage.getItem(TOKEN_STORAGE_KEY) ?? undefined;
+} catch {
+  /* Storage may be disabled. */
+}
+function storeRequestToken(token: string | undefined): void {
+  requestToken = token;
+  try {
+    if (token) sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+    else sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    /* Memory-only sessions still work when storage is disabled. */
+  }
+}
 
 export function getRequestToken(): string | undefined {
   return requestToken;
+}
+
+export async function signOut(): Promise<void> {
+  const headers = new Headers();
+  if (requestToken) headers.set(REQUEST_TOKEN_HEADER, requestToken);
+  try {
+    await fetch("/api/auth/logout", { method: "POST", headers });
+  } finally {
+    storeRequestToken(undefined);
+  }
 }
 
 export async function fetchSession(): Promise<Session | undefined> {
@@ -55,6 +80,7 @@ export async function fetchSession(): Promise<Session | undefined> {
   const response = await fetch("/api/auth/session", {
     headers: { [REQUEST_TOKEN_HEADER]: requestToken },
   });
+  if (response.status === 401) storeRequestToken(undefined);
   return response.ok ? ((await response.json()) as Session) : undefined;
 }
 
@@ -67,6 +93,11 @@ function useTurnstile(onToken: (token: string) => void, enabled: boolean) {
     let cancelled = false;
 
     if (!enabled) return;
+    const cleanup = () => {
+      cancelled = true;
+      if (widgetRef.current) window.turnstile?.remove?.(widgetRef.current);
+      widgetRef.current = undefined;
+    };
 
     function render() {
       if (cancelled || !containerRef.current || !window.turnstile || widgetRef.current) return;
@@ -84,9 +115,7 @@ function useTurnstile(onToken: (token: string) => void, enabled: boolean) {
 
     if (window.turnstile) {
       render();
-      return () => {
-        cancelled = true;
-      };
+      return cleanup;
     }
     const existing = document.querySelector<HTMLScriptElement>(`script[src^="${TURNSTILE_SRC}"]`);
     const script = existing ?? document.createElement("script");
@@ -97,13 +126,13 @@ function useTurnstile(onToken: (token: string) => void, enabled: boolean) {
     }
     script.addEventListener("load", render);
     return () => {
-      cancelled = true;
+      cleanup();
       script.removeEventListener("load", render);
     };
   }, [onToken, enabled]);
 
   const reset = useCallback(() => {
-    window.turnstile?.reset(widgetRef.current);
+    if (widgetRef.current) window.turnstile?.reset(widgetRef.current);
     onToken("");
   }, [onToken]);
 
@@ -125,7 +154,10 @@ export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Sessi
   // undefined until the server answers, so the form never guesses.
   const [captchaNeeded, setCaptchaNeeded] = useState<boolean | undefined>();
   const onToken = useCallback((token: string) => setCaptchaToken(token), []);
-  const { containerRef, ready, reset } = useTurnstile(onToken, captchaNeeded === true);
+  const { containerRef, ready, reset } = useTurnstile(
+    onToken,
+    captchaNeeded === true && mode === "password" && !linkSent && !verifying,
+  );
 
   useEffect(() => {
     void (async () => {
@@ -144,27 +176,35 @@ export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Sessi
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("token");
     if (!token) return;
+    // Remove credentials before any asynchronous work, including failed verification.
+    window.history.replaceState({}, "", "/console");
     void (async () => {
       setVerifying(true);
-      const response = await fetch("/api/auth/verify", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      if (!response.ok) {
-        const problem = (await response.json().catch(() => ({}))) as { detail?: string };
+      try {
+        const response = await fetch("/api/auth/verify", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (!response.ok) {
+          const problem = (await response.json().catch(() => ({}))) as { detail?: string };
+          setVerifying(false);
+          setError(problem.detail ?? "The sign-in link could not be verified.");
+          return;
+        }
+        const body = (await response.json()) as { requestToken: string };
+        storeRequestToken(body.requestToken);
+        // Strip the token so it is not left in browser history.
+        window.history.replaceState({}, "", "/console");
+        const session = await fetchSession();
         setVerifying(false);
-        setError(problem.detail ?? "The sign-in link could not be verified.");
-        return;
+        if (session) onSignedIn(session);
+        else setError("Signed in, but the session could not be read.");
+      } catch {
+        setError("Sign-in is unavailable. Please try again.");
+      } finally {
+        setVerifying(false);
       }
-      const body = (await response.json()) as { requestToken: string };
-      requestToken = body.requestToken;
-      // Strip the token so it is not left in browser history.
-      window.history.replaceState({}, "", "/console");
-      const session = await fetchSession();
-      setVerifying(false);
-      if (session) onSignedIn(session);
-      else setError("Signed in, but the session could not be read.");
     })();
   }, [onSignedIn]);
 
@@ -186,10 +226,13 @@ export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Sessi
         return;
       }
       const body = (await response.json()) as { requestToken: string };
-      requestToken = body.requestToken;
+      storeRequestToken(body.requestToken);
       const session = await fetchSession();
       if (session) onSignedIn(session);
       else setError("Signed in, but the session could not be read.");
+    } catch {
+      setError("Sign-in is unavailable. Please try again.");
+      reset();
     } finally {
       setBusy(false);
     }
@@ -208,6 +251,9 @@ export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Sessi
       // 202 regardless of whether the address exists — no account enumeration.
       if (response.ok) setLinkSent(true);
       else setError("Sign-in is unavailable right now.");
+    } catch {
+      setError("Sign-in is unavailable. Please try again.");
+      reset();
     } finally {
       setBusy(false);
     }
@@ -325,6 +371,7 @@ export default function SignInPage({ onSignedIn }: { onSignedIn: (session: Sessi
             <button
               className="ef-signin-link"
               onClick={() => {
+                reset();
                 setMode(mode === "password" ? "link" : "password");
                 setError(undefined);
               }}

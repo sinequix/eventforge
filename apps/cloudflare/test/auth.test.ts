@@ -182,5 +182,11 @@ describe("sign-in request does not sign unknown addresses up", () => {
         ENVIRONMENT: "development",
       } as never),
     ).toBe("http://localhost:5173");
+    expect(
+      consoleOriginFor({
+        AUTH_CONSOLE_ORIGIN: "https://dev.eventforge.dev",
+        ENVIRONMENT: "preview",
+      } as never),
+    ).toBe("https://dev.eventforge.dev");
   });
 });

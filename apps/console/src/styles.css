@@ -83,6 +83,90 @@ body {
       background-color 180ms ease,
       color 180ms ease;
   }
+  .admin-shell {
+    display: flex;
+    min-height: 100vh;
+    align-items: stretch;
+  }
+  .admin-sidebar {
+    display: flex;
+    width: 16rem;
+    flex-shrink: 0;
+    flex-direction: column;
+    border-right: 1px solid var(--border-subtle);
+    background: var(--surface);
+    padding: 1.25rem 0.85rem;
+  }
+  .admin-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.25rem 0.5rem 1rem;
+  }
+  .admin-brand img {
+    height: 1.75rem;
+    width: 1.75rem;
+  }
+  .admin-nav {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .admin-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    border: none;
+    border-radius: 0.625rem;
+    background: transparent;
+    padding: 0.5rem 0.7rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .admin-nav-item:hover {
+    background: var(--surface-muted);
+    color: var(--text-primary);
+  }
+  .admin-nav-item[aria-current="page"] {
+    background: var(--accent-cyan-soft);
+    color: var(--text-primary);
+  }
+  .admin-sidebar-foot {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem 0.5rem 0.25rem;
+    border-top: 1px solid var(--border-subtle);
+    margin-top: 0.75rem;
+  }
+  .admin-pane {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+  }
+  @media (max-width: 768px) {
+    .admin-shell {
+      flex-direction: column;
+    }
+    .admin-sidebar {
+      width: 100%;
+      border-right: none;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .admin-nav {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+    .admin-sidebar-foot {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 0.5rem;
+    }
+  }
   .console-ambient {
     background:
       radial-gradient(circle at 15% -10%, var(--ambient-cyan), transparent 27%),

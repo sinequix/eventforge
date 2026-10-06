@@ -1,6 +1,8 @@
 # Durable tenant delivery runbook
 
-Hosted ingress remains fail-closed until `PUBLIC_INGRESS_ENABLED`, `DURABLE_DELIVERY_ENABLED`, and `MONITORING_ENABLED` are all enabled, the queue bindings exist, and verified `delivery_installations` mappings are populated. This change does not claim a live drill.
+Hosted ingress remains fail-closed until `PUBLIC_INGRESS_ENABLED`, `DURABLE_DELIVERY_ENABLED`, and `MONITORING_ENABLED` are all enabled, the queue bindings exist, and verified `delivery_installations` mappings are populated. This change does not claim a live drill. Operator replay (`POST /v1/workspaces/:id/deliveries/:id/replay`) requires an audited reason and is still gated on `DURABLE_DELIVERY_ENABLED` — do not use production replay as a test button before the canary drill.
+
+Preview-only canary, after secret rotation: temporarily raise the three flags on **preview**, `POST /webhooks/canary` with HMAC + delivery id against an active `delivery_installations` row, reconcile R2/D1/outbox/Queue, then redeploy the gate. Do not leave preview flags on. Production stays `"false"` until that drill is signed.
 
 Each accepted delivery writes a workspace-scoped logical delivery and outbox intent before returning `202`. Cloudflare Queue is at-least-once; outcome and usage rows use the workspace-scoped logical-delivery key. There is no exactly-once transport or global ordering claim.
 

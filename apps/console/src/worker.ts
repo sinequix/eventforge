@@ -50,26 +50,31 @@ const robotsTxt = `User-agent: *
 Allow: /
 Disallow: /console
 Disallow: /api
+Disallow: /v1
 
 User-agent: GPTBot
 Allow: /
 Disallow: /console
 Disallow: /api
+Disallow: /v1
 
 User-agent: OAI-SearchBot
 Allow: /
 Disallow: /console
 Disallow: /api
+Disallow: /v1
 
 User-agent: Claude-Web
 Allow: /
 Disallow: /console
 Disallow: /api
+Disallow: /v1
 
 User-agent: Google-Extended
 Allow: /
 Disallow: /console
 Disallow: /api
+Disallow: /v1
 
 Content-Signal: ai-train=no, search=yes, ai-input=yes
 Sitemap: https://eventforge.dev/sitemap.xml
@@ -169,7 +174,7 @@ export default {
     // Same-origin proxy for the auth/API surface. Keeping this on the console
     // origin is what lets the session cookie be SameSite=Strict instead of a
     // cross-site None cookie.
-    if (url.pathname.startsWith("/api/") && env.API_ORIGIN) {
+    if ((url.pathname.startsWith("/api/") || url.pathname.startsWith("/v1/")) && env.API_ORIGIN) {
       const upstream = new URL(url.pathname + url.search, env.API_ORIGIN);
       const proxied = new Request(upstream, {
         method: request.method,
@@ -185,7 +190,12 @@ export default {
       // Pass the original request: `not_found_handling: single-page-application`
       // serves index.html for /console. Fetching /index.html directly would be
       // redirected to / by the assets binding.
-      return env.ASSETS.fetch(request);
+      const response = await env.ASSETS.fetch(request);
+      const headers = new Headers(response.headers);
+      headers.set("cache-control", "no-store");
+      headers.set("referrer-policy", "no-referrer");
+      headers.set("x-robots-tag", "noindex, nofollow");
+      return new Response(response.body, { status: response.status, headers });
     }
 
     if (url.pathname === "/analytics-config.json" && isPreProductionHost(url.hostname)) {

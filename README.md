@@ -130,6 +130,14 @@ pnpm dev:console
 
 Open `http://localhost:5173`, then select **Run GitHub CI demo**. The control plane is at `http://localhost:4310`.
 
+To run the Worker, console, and control plane together behind `https://dev.eventforge.dev` (named Cloudflare Tunnel, loopback bind only):
+
+```bash
+./dev.sh                  # supervise until Ctrl-C
+./dev.sh start --remote   # local processes, preview D1/R2
+./dev.sh stop
+```
+
 For the shortest walkthrough, run the demo event, inspect the resulting agent run and approval proposal, then compare the flow with the [demo video](https://youtu.be/pht3rrl--pE).
 
 `docker compose up -d` starts the PostgreSQL/pgvector and MinIO development dependencies. The control-plane container remains behind the `app` profile because remote mode deliberately refuses to start until authentication is injected; run the local control plane with `pnpm dev`. Provider OAuth credentials are never included in this repository.

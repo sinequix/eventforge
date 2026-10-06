@@ -205,8 +205,17 @@ export class SessionAuthority extends DurableObject<Env> {
         user_agent_label: string;
         ip_label: string;
       }>("SELECT * FROM sessions WHERE id = ?", sessionId)
-      .one();
+      .toArray()[0];
     if (!session || session.request_token !== requestToken) return { ok: false, reason: "unknown" };
+    const createdAt = Date.parse(session.created_at);
+    if (
+      !Number.isFinite(createdAt) ||
+      createdAt > Date.now() ||
+      Date.now() - createdAt >= 12 * 60 * 60_000
+    ) {
+      this.ctx.storage.sql.exec("DELETE FROM sessions WHERE id = ?", sessionId);
+      return { ok: false, reason: "unknown" };
+    }
     if (session.membership_version !== membershipVersion) return { ok: false, reason: "stale" };
     const now = new Date().toISOString();
     this.ctx.storage.sql.exec("UPDATE sessions SET last_used_at = ? WHERE id = ?", now, sessionId);

@@ -12,6 +12,7 @@ it("treats only loopback origins as local development", () => {
 it("never bypasses sign-in for a hosted origin", () => {
   for (const host of [
     "beta.eventforge.dev",
+    "dev.eventforge.dev",
     "eventforge.dev",
     "localhost.evil.com",
     "127.0.0.1.evil.com",

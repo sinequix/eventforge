@@ -17,6 +17,8 @@ dist/
 .env.*
 !.env.example
 !.env.production.template
+.dev.vars
+wrangler.dev.remote.jsonc
 
 # Coverage
 coverage/
