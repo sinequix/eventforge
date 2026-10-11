@@ -2599,3 +2599,71 @@ body {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* Sinequix copyright. Marketing footers place .ef-footer-legal on its own
+   row. Routes without that footer render .ef-site-footer. */
+.ef-footer-legal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--slate, #74818a);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.ef-footer-legal p {
+  margin: 0;
+}
+.ef-footer-legal a {
+  color: var(--paper, #e9e5d7);
+  text-decoration: none;
+}
+.ef-footer-legal a:hover {
+  color: var(--mint, #b9f7d0);
+}
+.ef-footer-legal a:focus-visible {
+  outline: 2px solid var(--mint, #b9f7d0);
+  outline-offset: 4px;
+}
+.ef-site-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #10151a;
+}
+.ef-site-shell > :first-child {
+  flex: 1 0 auto;
+}
+.ef-site-shell .ef-signin,
+.ef-site-shell .ef-waitlist-page,
+.ef-site-shell .console-shell {
+  min-height: 0;
+}
+.ef-site-footer {
+  --ink: #10151a;
+  --slate: #74818a;
+  --paper: #e9e5d7;
+  --mint: #b9f7d0;
+  box-sizing: border-box;
+  background: var(--ink);
+  color: var(--slate);
+  font-family: "Avenir Next", Avenir, "Helvetica Neue", Arial, sans-serif;
+}
+.ef-site-shell:has(.console-shell) {
+  background: var(--canvas);
+}
+.ef-site-shell:has(.console-shell) .ef-site-footer {
+  --slate: var(--text-muted);
+  --paper: var(--text-primary);
+  --mint: var(--accent-cyan);
+  width: min(1540px, 100%);
+  background: transparent;
+  color: var(--text-muted);
+  padding-inline: 24px;
+}
+@media (min-width: 1024px) {
+  .ef-site-shell:has(.console-shell) .ef-site-footer {
+    padding-inline: 40px;
+  }
+}

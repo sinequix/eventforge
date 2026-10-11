@@ -28,6 +28,14 @@ it("renders every lifecycle stage with a route back to the overview", () => {
     expect(container.querySelector(`#${id}`), `stage ${id} must render`).not.toBeNull();
   }
   expect(container.querySelector<HTMLAnchorElement>('a[href="/"]')).not.toBeNull();
+  expect(container.textContent).toContain(
+    `© ${new Date().getFullYear()} Sinequix. All rights reserved.`,
+  );
+  expect(container.textContent).toContain("A Sinequix venture");
+  const sinequix = container.querySelector<HTMLAnchorElement>('a[href="https://sinequix.com"]');
+  expect(sinequix?.textContent).toBe("Sinequix");
+  expect(sinequix?.getAttribute("target")).toBe("_blank");
+  expect(sinequix?.getAttribute("rel")).toBe("noopener noreferrer");
   expect(
     container.querySelector<HTMLImageElement>('img[src="/eventforge-mark.svg"]'),
   ).not.toBeNull();
