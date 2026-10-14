@@ -19,6 +19,14 @@ it("renders the public product story and working console entrypoint", () => {
   expect(container.textContent).toContain("Free to prove.");
   expect(container.textContent).toContain("Install with Codex");
   expect(container.textContent).toContain("Join the waitlist");
+  expect(container.textContent).toContain(
+    `© ${new Date().getFullYear()} Sinequix. All rights reserved.`,
+  );
+  expect(container.textContent).toContain("A Sinequix venture");
+  const sinequix = container.querySelector<HTMLAnchorElement>('a[href="https://sinequix.com"]');
+  expect(sinequix?.textContent).toBe("Sinequix");
+  expect(sinequix?.getAttribute("target")).toBe("_blank");
+  expect(sinequix?.getAttribute("rel")).toBe("noopener noreferrer");
   expect(container.textContent).toContain("Sign-in is live.");
   expect(container.querySelector("#waitlist")).not.toBeNull();
   expect(container.querySelector<HTMLFormElement>("#waitlist form")).not.toBeNull();

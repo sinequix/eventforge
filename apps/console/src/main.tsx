@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import ConsoleGate from "./ConsoleGate";
 import FeaturesPage from "./FeaturesPage";
 import LandingPage from "./LandingPage";
+import { SiteLayout } from "./SiteFooter";
 import WaitlistPage from "./WaitlistPage";
 import { initializeAnalytics } from "./analytics";
 import "./styles.css";
@@ -46,16 +47,20 @@ applyTheme(getInitialTheme());
 void initializeAnalytics();
 registerWebMcpTool();
 
+const includeShellFooter = isConsoleRoute || isWaitlistRoute;
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {isConsoleRoute ? (
-      <ConsoleGate />
-    ) : isWaitlistRoute ? (
-      <WaitlistPage />
-    ) : isFeaturesRoute ? (
-      <FeaturesPage />
-    ) : (
-      <LandingPage />
-    )}
+    <SiteLayout includeFooter={includeShellFooter}>
+      {isConsoleRoute ? (
+        <ConsoleGate />
+      ) : isWaitlistRoute ? (
+        <WaitlistPage />
+      ) : isFeaturesRoute ? (
+        <FeaturesPage />
+      ) : (
+        <LandingPage />
+      )}
+    </SiteLayout>
   </StrictMode>,
 );

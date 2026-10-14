@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Mark } from "./Mark";
+import { CopyrightNotice } from "./SiteFooter";
 import {
   ArrowUpRight,
   Asterisk,
@@ -699,8 +700,8 @@ export default function LandingPage() {
           <a href={GITHUB_REPOSITORY} target="_blank" rel="noreferrer">
             GitHub
           </a>
-          <span>© 2026</span>
         </div>
+        <CopyrightNotice />
       </footer>
     </main>
   );
