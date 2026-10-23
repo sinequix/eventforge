@@ -20,7 +20,7 @@ concurrency:
 jobs:
   validate:
     name: Quality (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, ian-hetzner]
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -55,7 +55,7 @@ jobs:
 
   electron-package:
     name: Package Electron application
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, ian-hetzner]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +71,7 @@ jobs:
 
   deployment-manifests:
     name: Validate deployment manifests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, ian-hetzner]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -99,7 +99,7 @@ jobs:
 
   secret-scan:
     name: Scan committed content for secrets
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, ian-hetzner]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
