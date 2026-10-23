@@ -56,13 +56,13 @@ it("serves the console SPA on production instead of a sign-in gate", async () =>
 
 it("proxies /api on production so the session cookie can stay SameSite=Strict", async () => {
   const originalFetch = globalThis.fetch;
-  const fetchMock = vi.fn(
+  const fetchMock = vi.fn<typeof fetch>(
     async () =>
       new Response(JSON.stringify({ captchaRequired: true }), {
         headers: { "content-type": "application/json" },
       }),
   );
-  globalThis.fetch = fetchMock as typeof fetch;
+  globalThis.fetch = fetchMock;
   try {
     const response = await worker.fetch(new Request("https://eventforge.dev/api/auth/config"), {
       ASSETS: { fetch: async () => new Response("assets") },

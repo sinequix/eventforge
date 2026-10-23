@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { Mark } from "./Mark";
+import { CopyrightNotice } from "./SiteFooter";
 import { captureEvent } from "./analytics";
 
 const GITHUB_REPOSITORY = "https://github.com/tebayoso/eventforge";
@@ -393,6 +394,7 @@ export default function FeaturesPage() {
             GitHub
           </a>
         </div>
+        <CopyrightNotice />
       </footer>
     </main>
   );

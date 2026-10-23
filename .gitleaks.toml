@@ -25,3 +25,10 @@ paths = [
   '''apps/console/public/analytics-config\.json''',
   '''apps/console/dist/analytics-config\.json''',
 ]
+
+[[rules.allowlists]]
+description = "Public Cloudflare deployment version recorded in the release audit"
+condition = "AND"
+regexTarget = "line"
+regexes = ['''(?m)^- API version: `d56ad744-eeb3-42be-8b24-7e4a3ed0ceac`\.$''']
+paths = ['''(^|/)workfiles/CONFIGURATION\.md$''']
