@@ -424,13 +424,13 @@ same commit.
 
 GitHub: https://github.com/tebayoso/eventforge/releases/tag/v1.0.0-rc.1
 
-| Surface | Result |
-| --- | --- |
-| Preview API `/health` | `ok`, `environment=preview`, `ingress=gated` |
-| Production API `/health` | `ok`, `environment=production`, `ingress=gated` |
-| `hooks.eventforge.dev` | custom domain live; unsigned routes 404 |
-| `beta.eventforge.dev` | live; analytics-config blanked; `/console` sign-in SPA |
-| `eventforge.dev` | live; `/console` 503; waitlist and features pages render |
+| Surface                  | Result                                                   |
+| ------------------------ | -------------------------------------------------------- |
+| Preview API `/health`    | `ok`, `environment=preview`, `ingress=gated`             |
+| Production API `/health` | `ok`, `environment=production`, `ingress=gated`          |
+| `hooks.eventforge.dev`   | custom domain live; unsigned routes 404                  |
+| `beta.eventforge.dev`    | live; analytics-config blanked; `/console` sign-in SPA   |
+| `eventforge.dev`         | live; `/console` 503; waitlist and features pages render |
 
 D1 applied: preview events `0002_durable_deliveries`; production control
 `0003_delivery_installations`, `0003_hosted_identity`, `0004_identity_passwords`;
