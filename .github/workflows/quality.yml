@@ -116,5 +116,7 @@ jobs:
             --output "$install_dir/gitleaks.tar.gz"
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $install_dir/gitleaks.tar.gz" | sha256sum --check --status
           tar -xzf "$install_dir/gitleaks.tar.gz" -C "$install_dir" gitleaks
+      - name: Verify narrow secret-scan exceptions
+        run: 'node scripts/gitleaks-config.test.mjs "${RUNNER_TEMP}/eventforge-gitleaks/gitleaks"'
       - name: Scan complete Git history
-        run: '"${RUNNER_TEMP}/eventforge-gitleaks/gitleaks" git --redact --no-banner --exit-code 1 .'
+        run: '"${RUNNER_TEMP}/eventforge-gitleaks/gitleaks" git --config .gitleaks.toml --redact --no-banner --exit-code 1 .'
