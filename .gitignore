@@ -53,6 +53,8 @@ release/
 # Testing
 .c3/
 .turbo/
+__pycache__/
+*.py[cod]
 
 # Logs
 logs/

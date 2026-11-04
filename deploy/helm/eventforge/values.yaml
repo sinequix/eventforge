@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/tebayoso/eventforge-control-plane
+  repository: ghcr.io/sinequix/eventforge-control-plane
   tag: "0.1.0"
   # Release automation must override this with the published multi-arch digest.
   digest: ""

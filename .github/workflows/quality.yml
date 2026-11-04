@@ -91,11 +91,20 @@ jobs:
         run: |
           helm template eventforge deploy/helm/eventforge --set networkPolicy.enabled=true | grep -q 'kind: NetworkPolicy'
       - name: Render immutable control-plane image variant
-        run: helm template eventforge deploy/helm/eventforge --set-string image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 | grep -q 'ghcr.io/tebayoso/eventforge-control-plane@sha256:'
+        run: helm template eventforge deploy/helm/eventforge --set-string image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 | grep -q 'ghcr.io/sinequix/eventforge-control-plane@sha256:'
       - name: Build non-root production image
         run: docker build --tag eventforge-control-plane:test --file apps/control-plane/Dockerfile .
       - name: Verify production image user
         run: test "$(docker image inspect eventforge-control-plane:test --format '{{.Config.User}}')" = node
+
+  hermes-plugin:
+    name: Hermes plugin tests
+    runs-on: [self-hosted, Linux, X64, ian-hetzner]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test EventForge Hermes tools and hooks
+        run: python3 -m unittest discover -s plugins/hermes-eventforge/tests -v
 
   secret-scan:
     name: Scan committed content for secrets

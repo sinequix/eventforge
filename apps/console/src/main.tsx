@@ -28,9 +28,9 @@ function registerWebMcpTool() {
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     execute: async () => ({
       install:
-        "codex mcp add eventforge -- npx -y --package github:tebayoso/eventforge eventforge-mcp",
-      docs: "https://github.com/tebayoso/eventforge/blob/main/workfiles/CONFIGURATION.md",
-      repository: "https://github.com/tebayoso/eventforge",
+        "codex mcp add eventforge -- npx -y --package github:sinequix/eventforge eventforge-mcp",
+      docs: "https://github.com/sinequix/eventforge/blob/main/workfiles/CONFIGURATION.md",
+      repository: "https://github.com/sinequix/eventforge",
     }),
     annotations: { readOnlyHint: true },
   });

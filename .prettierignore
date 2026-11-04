@@ -8,3 +8,5 @@
 plugins/eventforge/server
 deploy/helm/**/templates
 pnpm-lock.yaml
+# Wrangler emits tabs; Prettier rewrites the whole generated file.
+apps/cloudflare/worker-configuration.d.ts

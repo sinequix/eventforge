@@ -26,7 +26,7 @@ import { useEffect } from "react";
 import { Mark } from "./Mark";
 import { captureEvent } from "./analytics";
 
-const GITHUB_REPOSITORY = "https://github.com/tebayoso/eventforge";
+const GITHUB_REPOSITORY = "https://github.com/sinequix/eventforge";
 
 // Maturity is stated per feature rather than implied.
 //

@@ -26,7 +26,7 @@ Continue only when `pnpm --version` reports `11.5.1`.
 ## EventForge MCP tools are missing
 
 1. Run `codex mcp list` and confirm the server name and command/URL.
-2. For package mode, run `npx -y --package github:tebayoso/eventforge eventforge-mcp` from a terminal and confirm the embedded API starts on loopback.
+2. For package mode, run `npx -y --package github:sinequix/eventforge eventforge-mcp` from a terminal and confirm the embedded API starts on loopback.
 3. Run `pnpm --filter @eventforge/mcp-server pack:check` and `pnpm plugin:check` from a checkout.
 4. Review the plugin's `.mcp.json` and `.codex-plugin/plugin.json` paths.
 5. Restart Codex after installing or changing a plugin. Plugin-bundled hooks require a separate trust review when their content changes.

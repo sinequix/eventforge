@@ -59,7 +59,7 @@ Run this from the project whose files EventForge should inspect:
 ```bash
 codex mcp add eventforge \
   --env EVENTFORGE_CODEX_WORKDIR="$PWD" \
-  -- npx -y --package github:tebayoso/eventforge eventforge-mcp
+  -- npx -y --package github:sinequix/eventforge eventforge-mcp
 ```
 
 Restart Codex and verify the server:
@@ -80,7 +80,7 @@ codex mcp add eventforge \
   --env EVENTFORGE_API_URL="http://127.0.0.1:4310" \
   --env EVENTFORGE_AUTO_START=false \
   --env EVENTFORGE_CODEX_WORKDIR="$PWD" \
-  -- npx -y --package github:tebayoso/eventforge eventforge-mcp
+  -- npx -y --package github:sinequix/eventforge eventforge-mcp
 ```
 
 The GitHub package spec is the supported public installer until
@@ -99,7 +99,7 @@ The equivalent `~/.codex/config.toml` entry is:
 ```toml
 [mcp_servers.eventforge]
 command = "npx"
-args = ["-y", "--package", "github:tebayoso/eventforge", "eventforge-mcp"]
+args = ["-y", "--package", "github:sinequix/eventforge", "eventforge-mcp"]
 startup_timeout_sec = 20
 tool_timeout_sec = 60
 
@@ -158,7 +158,7 @@ default is `http://localhost:5173`; do not use `*` for a credentialed console.
 The HTTP launcher is useful for local clients that cannot use stdio:
 
 ```bash
-npx -y --package github:tebayoso/eventforge eventforge-mcp-http
+npx -y --package github:sinequix/eventforge eventforge-mcp-http
 ```
 
 It serves `http://127.0.0.1:4312/mcp` and starts the local API automatically.

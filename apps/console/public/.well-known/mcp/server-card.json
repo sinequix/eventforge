@@ -12,7 +12,7 @@
     "resources": true,
     "prompts": false
   },
-  "documentation": "https://github.com/tebayoso/eventforge/blob/main/packages/mcp-server/README.md",
-  "localInstall": "codex mcp add eventforge -- npx -y --package github:tebayoso/eventforge eventforge-mcp",
+  "documentation": "https://github.com/sinequix/eventforge/blob/main/packages/mcp-server/README.md",
+  "localInstall": "codex mcp add eventforge -- npx -y --package github:sinequix/eventforge eventforge-mcp",
   "localHttp": "http://127.0.0.1:4312/mcp"
 }

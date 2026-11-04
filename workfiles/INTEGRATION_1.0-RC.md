@@ -417,20 +417,20 @@ adding more modules — this will recur otherwise.
 
 ## Released: 2026-08-28 — v1.0.0-rc.1
 
-PR [#52](https://github.com/tebayoso/eventforge/pull/52) was already merged to
+PR [#52](https://github.com/sinequix/eventforge/pull/52) was already merged to
 `master` at `30865aa`; release tag `v1.0.0-rc.1` points at `06c5de6`
 (toolchain bump after the merge). `origin/1.0-rc` was fast-forwarded to the
 same commit.
 
-GitHub: https://github.com/tebayoso/eventforge/releases/tag/v1.0.0-rc.1
+GitHub: https://github.com/sinequix/eventforge/releases/tag/v1.0.0-rc.1
 
-| Surface | Result |
-| --- | --- |
-| Preview API `/health` | `ok`, `environment=preview`, `ingress=gated` |
-| Production API `/health` | `ok`, `environment=production`, `ingress=gated` |
-| `hooks.eventforge.dev` | custom domain live; unsigned routes 404 |
-| `beta.eventforge.dev` | live; analytics-config blanked; `/console` sign-in SPA |
-| `eventforge.dev` | live; `/console` 503; waitlist and features pages render |
+| Surface                  | Result                                                   |
+| ------------------------ | -------------------------------------------------------- |
+| Preview API `/health`    | `ok`, `environment=preview`, `ingress=gated`             |
+| Production API `/health` | `ok`, `environment=production`, `ingress=gated`          |
+| `hooks.eventforge.dev`   | custom domain live; unsigned routes 404                  |
+| `beta.eventforge.dev`    | live; analytics-config blanked; `/console` sign-in SPA   |
+| `eventforge.dev`         | live; `/console` 503; waitlist and features pages render |
 
 D1 applied: preview events `0002_durable_deliveries`; production control
 `0003_delivery_installations`, `0003_hosted_identity`, `0004_identity_passwords`;

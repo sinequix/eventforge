@@ -143,7 +143,7 @@ function createIssueReviewWorkflow(
       version: 1,
       approvalMode: "approval_required",
       allowedCapabilities: ["read"],
-      allowedRepositories: ["tebayoso/eventforge"],
+      allowedRepositories: ["sinequix/eventforge"],
       allowedPaths: ["**"],
       allowedDomains: [],
       allowedProviders: ["github"],
@@ -166,7 +166,7 @@ function createPullRequestReviewWorkflow(): WorkflowDefinition {
       version: 1,
       approvalMode: "approval_required",
       allowedCapabilities: ["read"],
-      allowedRepositories: ["tebayoso/eventforge"],
+      allowedRepositories: ["sinequix/eventforge"],
       allowedPaths: ["**"],
       allowedDomains: [],
       allowedProviders: ["github"],
@@ -557,6 +557,34 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       scopedWorkspace(request, (request.query as { workspaceId?: string }).workspaceId),
     ),
   );
+  app.post("/audit", async (request, reply) => {
+    const parsed = z
+      .object({
+        kind: z.literal("hermes_tool"),
+        subjectId: z.string().min(1).max(200),
+        message: z.string().min(1).max(500),
+        workspaceId: z.string().min(1).default(DEFAULT_WORKSPACE),
+      })
+      .safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
+    if (!ownsWorkspace(request, parsed.data.workspaceId))
+      return reply
+        .status(403)
+        .send({ error: "Cannot write an audit entry into another workspace." });
+    if (
+      runtime.mode === "remote" &&
+      !authFor(request, parsed.data.workspaceId).scopes.includes("eventforge:operate")
+    ) {
+      return reply.status(403).send({ error: "eventforge:operate scope required." });
+    }
+    const entry = store.audit(
+      parsed.data.workspaceId,
+      "hermes_tool",
+      parsed.data.subjectId,
+      parsed.data.message,
+    );
+    return reply.status(201).send(entry);
+  });
   app.get("/memory", async (request) => {
     const query = request.query as { workspaceId?: string; projectId?: string; q?: string };
     return store.memory.query(

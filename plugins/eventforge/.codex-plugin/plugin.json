@@ -8,7 +8,7 @@
     "url": "https://eventforge.dev"
   },
   "homepage": "https://eventforge.dev",
-  "repository": "https://github.com/tebayoso/eventforge",
+  "repository": "https://github.com/sinequix/eventforge",
   "license": "Apache-2.0",
   "keywords": ["codex", "mcp", "webhooks", "agentic-workflows", "developer-tools"],
   "mcpServers": "./.mcp.json",

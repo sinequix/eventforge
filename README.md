@@ -52,7 +52,7 @@ The local/private-edge path keeps Fastify, Electron, MCP stdio, Cloudflare Tunne
 
 ## Hackathon submission
 
-- **Code repository:** [github.com/tebayoso/eventforge](https://github.com/tebayoso/eventforge)
+- **Code repository:** [github.com/sinequix/eventforge](https://github.com/sinequix/eventforge)
 
 ### How Codex and GPT-5.6 were used
 
@@ -71,7 +71,7 @@ remote HTTP requirements, and verification checklist, see
 The MCP package can start a credential-free local EventForge control plane automatically. A new user does not need an EventForge checkout for this path; Codex downloads the self-contained launcher from the public GitHub repository:
 
 ```bash
-codex mcp add eventforge --env EVENTFORGE_CODEX_WORKDIR="$PWD" -- npx -y --package github:tebayoso/eventforge eventforge-mcp
+codex mcp add eventforge --env EVENTFORGE_CODEX_WORKDIR="$PWD" -- npx -y --package github:sinequix/eventforge eventforge-mcp
 ```
 
 Restart Codex, then use `/mcp` to confirm the `eventforge` server is connected. The launcher starts a local API on `http://127.0.0.1:4310`, uses the deterministic demo runner by default, and keeps the same approval-gated tools as the repository plugin. Set `EVENTFORGE_API_URL` to an already-running local API to disable automatic startup; set `EVENTFORGE_AUTO_START=false` when the MCP process must never launch a local control plane.
@@ -215,6 +215,7 @@ Delivery deduplication and thread retention in local mode last only for the curr
 - `packages/core` — contracts, signature verification, policy evaluation, memory, and guarded forge logic.
 - `packages/mcp-server` — Codex MCP server that controls the local/cloud EventForge API.
 - `plugins/eventforge` — native Codex plugin manifest, MCP registration, skill, and opt-in hook.
+- `plugins/hermes-eventforge` — Hermes Agent plugin. It proxies the same control-plane tools and does not start a second implementation of them.
 
 ## Safety model
 

@@ -115,7 +115,7 @@ export default function WaitlistPage() {
         </div>
         <a
           className="ef-waitlist-local"
-          href="https://github.com/tebayoso/eventforge"
+          href="https://github.com/sinequix/eventforge"
           target="_blank"
           rel="noreferrer"
         >

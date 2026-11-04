@@ -9,7 +9,7 @@ variables, and verification steps.
 The package can self-start a credential-free local control plane when launched as `eventforge-mcp`. From Codex, use the public repository before the npm release:
 
 ```bash
-codex mcp add eventforge -- npx -y --package github:tebayoso/eventforge eventforge-mcp
+codex mcp add eventforge -- npx -y --package github:sinequix/eventforge eventforge-mcp
 ```
 
 After the scoped package is published, replace the package spec with `@eventforge/mcp-server`. From this repository, validate the publishable tarball with `pnpm pack:check`.

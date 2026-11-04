@@ -8,7 +8,7 @@ _Turn webhook noise into safe, agent-ready engineering work._
 
 ## Project URL and demo
 
-- **Repository:** [github.com/tebayoso/eventforge](https://github.com/tebayoso/eventforge)
+- **Repository:** [github.com/sinequix/eventforge](https://github.com/sinequix/eventforge)
 - **Demo video:** [youtu.be/pht3rrl--pE](https://youtu.be/pht3rrl--pE)
 
 ## Description
@@ -96,7 +96,7 @@ pnpm dev:console
 Then create the issue:
 
 ```bash
-gh issue create --repo tebayoso/eventforge \
+gh issue create --repo sinequix/eventforge \
   --title "Review this engineering issue" \
   --body "Describe the problem, expected behavior, and relevant context."
 ```

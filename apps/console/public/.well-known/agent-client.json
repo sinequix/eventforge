@@ -7,7 +7,7 @@
     {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "--package", "github:tebayoso/eventforge", "eventforge-mcp"],
+      "args": ["-y", "--package", "github:sinequix/eventforge", "eventforge-mcp"],
       "environment": {
         "EVENTFORGE_CODEX_WORKDIR": "<absolute-project-path>"
       },
@@ -17,13 +17,13 @@
       "type": "streamable-http",
       "url": "http://127.0.0.1:4312/mcp",
       "authentication": "optional-loopback-bearer",
-      "launcher": "npx -y --package github:tebayoso/eventforge eventforge-mcp-http"
+      "launcher": "npx -y --package github:sinequix/eventforge eventforge-mcp-http"
     }
   ],
   "hosted": {
     "url": "https://api.eventforge.dev/mcp",
     "status": "gated",
     "authentication": "oauth-2.1-when-enabled",
-    "documentation": "https://github.com/tebayoso/eventforge/blob/main/workfiles/CONFIGURATION.md#remote-streamable-http"
+    "documentation": "https://github.com/sinequix/eventforge/blob/main/workfiles/CONFIGURATION.md#remote-streamable-http"
   }
 }

@@ -32,7 +32,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tebayoso/eventforge.git",
+    "url": "git+https://github.com/sinequix/eventforge.git",
     "directory": "packages/mcp-server"
   },
   "scripts": {
