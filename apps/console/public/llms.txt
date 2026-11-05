@@ -2,7 +2,7 @@
 
 > EventForge lets an AI agent react to real webhooks. It checks GitHub, Linear and Sentry signatures before an event reaches the model, runs on your machine, and holds any action that writes until a person approves it.
 
-EventForge is open source and made by Sinequix in Tandil, Argentina. The control plane runs locally on 127.0.0.1:4310. EventForge verifies every signature. Events that fail verification are kept out of the model's context. Agents investigate read-only and propose what to do; every write needs an explicit approval and is recorded in an audit trail.
+EventForge is open source and made by Sinequix in Tandil, Argentina. The control plane runs locally on 127.0.0.1:4310. EventForge checks the signature. Forged events are rejected, unsigned ones are flagged, and only verified events get injected into your agent's context. Agents investigate read-only and propose what to do; every write needs an explicit approval and is recorded in an audit trail.
 
 ## Use it with Hermes Agent
 

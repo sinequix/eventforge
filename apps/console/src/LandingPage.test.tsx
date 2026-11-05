@@ -18,7 +18,7 @@ it("renders the public product story and working console entrypoint", () => {
   ).not.toBeNull();
   expect(container.textContent).toContain("Let your agent react to real webhooks.");
   expect(container.textContent).toContain(
-    "EventForge verifies the signature. Events that fail verification are kept out of the model's context.",
+    "EventForge checks the signature. Forged events are rejected, unsigned ones are flagged, and only verified events get injected into your agent's context.",
   );
   expect(container.textContent).toContain("Open source. Made by Sinequix in Tandil, Argentina.");
   expect(container.querySelector("#hermes")).not.toBeNull();
@@ -52,7 +52,7 @@ it("renders the public product story and working console entrypoint", () => {
 it("publishes an llms.txt that matches the approved home copy", () => {
   const llms = readFileSync(resolve(process.cwd(), "public/llms.txt"), "utf8");
   expect(llms.startsWith("# EventForge\n")).toBe(true);
-  expect(llms).toContain("Events that fail verification are kept out of the model's context.");
+  expect(llms).toContain("only verified events get injected into your agent's context.");
   expect(llms).toContain("https://github.com/sinequix/eventforge");
   expect(llms).not.toContain("tebayoso");
   expect(llms).not.toContain("hermes plugins install");
