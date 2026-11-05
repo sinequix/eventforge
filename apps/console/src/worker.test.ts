@@ -57,7 +57,7 @@ it("serves the console SPA on production instead of a sign-in gate", async () =>
 it("proxies /api on production so the session cookie can stay SameSite=Strict", async () => {
   const originalFetch = globalThis.fetch;
   const fetchMock = vi.fn(
-    async () =>
+    async (_input: RequestInfo | URL, _init?: RequestInit) =>
       new Response(JSON.stringify({ captchaRequired: true }), {
         headers: { "content-type": "application/json" },
       }),
@@ -69,8 +69,11 @@ it("proxies /api on production so the session cookie can stay SameSite=Strict", 
       API_ORIGIN: "https://api.eventforge.dev",
     });
     expect(fetchMock).toHaveBeenCalledOnce();
-    const upstream = fetchMock.mock.calls[0]![0] as Request;
-    expect(new URL(upstream.url).href).toBe("https://api.eventforge.dev/api/auth/config");
+    const upstream = fetchMock.mock.calls[0]?.[0];
+    expect(upstream).toBeInstanceOf(Request);
+    expect(new URL((upstream as Request).url).href).toBe(
+      "https://api.eventforge.dev/api/auth/config",
+    );
     expect(await response.json()).toEqual({ captchaRequired: true });
   } finally {
     globalThis.fetch = originalFetch;

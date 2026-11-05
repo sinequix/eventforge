@@ -302,7 +302,8 @@ export type AuditEntry = {
     | "issue_review"
     | "approval"
     | "forge"
-    | "connector";
+    | "connector"
+    | "hermes_tool";
   subjectId: string;
   message: string;
   createdAt: string;

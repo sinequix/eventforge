@@ -11,7 +11,7 @@ const base = createReactionEnvelope({
   workspaceId: "ws-a",
   installationId: "gh-1",
   provider: "github",
-  resource: "tebayoso/eventforge#20",
+  resource: "sinequix/eventforge#20",
   action: { type: "github.comment", content: "Investigating." },
   policyVersion: 2,
   policyRule: "comment-only",

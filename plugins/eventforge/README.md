@@ -10,7 +10,7 @@ The plugin includes a self-contained, compiled MCP server and requires only Node
 For a zero-checkout setup, configure the self-starting package directly in Codex:
 
 ```bash
-codex mcp add eventforge -- npx -y --package github:tebayoso/eventforge eventforge-mcp
+codex mcp add eventforge -- npx -y --package github:sinequix/eventforge eventforge-mcp
 ```
 
 This launcher starts the local control plane automatically when the default API is unavailable. The repository plugin uses the same self-starting bundle; it remains useful when you want the skills and optional lifecycle hook in addition to MCP.

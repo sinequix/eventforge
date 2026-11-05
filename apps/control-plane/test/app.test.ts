@@ -336,6 +336,34 @@ describe("control plane", () => {
     await app.close();
   });
 
+  it("records Hermes tool audits and rejects forged approval kinds", async () => {
+    const store = new EventForgeStore();
+    const app = await createApp({ store, runner, persistAudit: false });
+    const created = await app.inject({
+      method: "POST",
+      url: "/audit",
+      payload: {
+        kind: "hermes_tool",
+        subjectId: "ef_list_events",
+        message: "ef_list_events completed",
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({
+      kind: "hermes_tool",
+      subjectId: "ef_list_events",
+      message: "ef_list_events completed",
+    });
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/audit",
+      payload: { kind: "approval", subjectId: "forged", message: "pretend approval" },
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(store.auditEntries().some((entry) => entry.kind === "approval")).toBe(false);
+    await app.close();
+  });
+
   it("rejects an unsigned live webhook", async () => {
     const app = await createApp({ persistAudit: false });
     const response = await app.inject({
@@ -638,7 +666,7 @@ describe("control plane", () => {
       action: "opened",
       number: 7,
       pull_request: { number: 7, title: "Acknowledge first" },
-      repository: { full_name: "tebayoso/eventforge" },
+      repository: { full_name: "sinequix/eventforge" },
     });
     const signature = `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`;
     try {
@@ -686,7 +714,7 @@ describe("control plane", () => {
         payload: {
           action: "opened",
           issue: { number: 42, title: "Review webhook issue flow" },
-          repository: { full_name: "tebayoso/eventforge" },
+          repository: { full_name: "sinequix/eventforge" },
           sender: { login: "issue-author" },
         },
       },
@@ -709,7 +737,7 @@ describe("control plane", () => {
     const previousRepository = process.env.EVENTFORGE_GITHUB_REPOSITORY;
     const secret = "pull-request-webhook-secret";
     process.env.GITHUB_WEBHOOK_SECRET = secret;
-    process.env.EVENTFORGE_GITHUB_REPOSITORY = "tebayoso/eventforge";
+    process.env.EVENTFORGE_GITHUB_REPOSITORY = "sinequix/eventforge";
     const suppliedThreadIds: Array<string | undefined> = [];
     const pullRequestRunner: AgentRunner = {
       investigate: async ({ threadId }) => {
@@ -730,7 +758,7 @@ describe("control plane", () => {
         action,
         number: 3,
         pull_request: { number: 3, title: "Harden EventForge", head: { sha } },
-        repository: { full_name: "tebayoso/eventforge" },
+        repository: { full_name: "sinequix/eventforge" },
       });
       return app.inject({
         method: "POST",
@@ -750,7 +778,7 @@ describe("control plane", () => {
       expect((await app.inject({ method: "GET", url: "/events" })).json()[0]).toMatchObject({
         topic: "pull_request",
         signatureStatus: "verified",
-        repository: "tebayoso/eventforge",
+        repository: "sinequix/eventforge",
       });
       expect((await app.inject({ method: "GET", url: "/runs" })).json()[0]).toMatchObject({
         threadId: "thread-pr-3",

@@ -15,7 +15,7 @@ Reusable pattern: snapshot interactive elements before each click, resnapshot af
 ## 2026-07-17 — Live GitHub relay acceptance flow
 
 - Started `pnpm dev:github`, which generated an ignored local signing secret, created GitHub webhook `#653895042`, and forwarded `check_run` deliveries from a disposable Smee channel to `http://127.0.0.1:4310/webhooks/github`.
-- Dispatched the manual-only **EventForge CI failure demo** workflow at `https://github.com/tebayoso/eventforge/actions`. Outcome: the workflow failed intentionally and GitHub delivered both queued and completed `check_run` events.
+- Dispatched the manual-only **EventForge CI failure demo** workflow at `https://github.com/sinequix/eventforge/actions`. Outcome: the workflow failed intentionally and GitHub delivered both queued and completed `check_run` events.
 - Verified `http://127.0.0.1:4310/events` recorded the completed delivery as `signatureStatus: verified`, and `http://127.0.0.1:4310/actions` contained a pending remediation proposal rather than an automatic write.
 - Attempted to reopen `http://localhost:5173/` in the Codex in-app browser. The runtime reported stale tab ownership after the prior tab cleanup, so browser assertions were not reused; the API-level acceptance evidence above remains valid.
 
@@ -31,7 +31,7 @@ Reusable pattern: Quick Tunnel URLs change on each launch. Do not dispatch a pro
 
 ## 2026-07-17 — GitHub issue to Codex review flow
 
-- Created GitHub issue [#1](https://github.com/tebayoso/eventforge/issues/1) with an explicit no-write review request. GitHub delivered the signed `issues` event to EventForge.
+- Created GitHub issue [#1](https://github.com/sinequix/eventforge/issues/1) with an explicit no-write review request. GitHub delivered the signed `issues` event to EventForge.
 - Confirmed the first implementation correctly started Codex thread `019f71ce-21ca-7001-9c77-2b30380e0ae1` and created no action, but GitHub timed out because the webhook response waited for the 24-second Codex review.
 - Changed verified webhook processing to start workflow analysis in the background and acknowledge it immediately. Redelivered the same GitHub delivery: GitHub recorded HTTP `202`, and EventForge completed fresh process-retained thread `019f71cf-98c8-7213-ace1-ed7d293e90a1` with an assessment and an empty action queue.
 - Opened that thread in the Codex desktop app. The review identified the event as a test-only request and retained the read-only policy.
@@ -125,8 +125,8 @@ Reusable pattern: after a new custom-domain attachment, distinguish public DNS p
 ## 2026-07-18 — GitHub pull request to local Codex review
 
 - Started `pnpm dev:github` with the local named tunnel `eventforge-local`. EventForge verified `https://eventforge-hooks.planeflare.com/health`, then patched GitHub webhook `#653895042` to the signed `/webhooks/github` endpoint with `pull_request`, `pull_request_review`, and `issue_comment` subscriptions alongside the existing issue and check-run events.
-- Pushed commit `40ac4c7` to PR [#3](https://github.com/tebayoso/eventforge/pull/3). GitHub delivery `3831934487258726400` sent `pull_request:synchronize` and received HTTP `202` in 0.69 seconds.
-- Confirmed local event `1edbf54f-d29e-43ea-a8f9-e6bc0aae0a38` recorded `signatureStatus: verified`, repository `tebayoso/eventforge`, PR `#3`, and the exact pushed SHA.
+- Pushed commit `40ac4c7` to PR [#3](https://github.com/sinequix/eventforge/pull/3). GitHub delivery `3831934487258726400` sent `pull_request:synchronize` and received HTTP `202` in 0.69 seconds.
+- Confirmed local event `1edbf54f-d29e-43ea-a8f9-e6bc0aae0a38` recorded `signatureStatus: verified`, repository `sinequix/eventforge`, PR `#3`, and the exact pushed SHA.
 - Waited for the background read-only review. Outcome: run `1f374ffc-62e6-41ee-90f3-ea81f93335a3` completed in Codex thread `019f758c-2523-71d3-9b19-a8a89ddaae4d`; `/actions` remained empty. Opened the resulting task in the Codex desktop app.
 
 Reusable pattern: keep `pnpm dev:github` running, require public health plus an active matching GitHub hook before pushing, assert the provider delivery returns `202`, then correlate the delivery GUID to a verified local event and wait independently for the run's `threadId`. A PR review must remain read-only and leave `/actions` empty.
@@ -199,7 +199,7 @@ Reusable pattern: for marketing changes, validate both the accessibility hierarc
 
 - Deployed the updated static console Worker to `https://eventforge.dev/` as Cloudflare version `9548169c-93a0-4a78-a0e5-55d86949b9ce`.
 - Reopened the production landing page at desktop width and verified the new hero, Product, Pricing, Docs, GitHub, roadmap, four pricing tiers, Codex install panel, and final console CTA in the accessibility tree.
-- Confirmed the live GitHub API badge resolves to `0 stars` and `0 forks` for `tebayoso/eventforge`; when the public GitHub API is unavailable the UI shows an em dash instead of inventing a count.
+- Confirmed the live GitHub API badge resolves to `0 stars` and `0 forks` for `sinequix/eventforge`; when the public GitHub API is unavailable the UI shows an em dash instead of inventing a count.
 - Verified the production CSP includes `https://api.github.com`, so the live star/fork request is allowed. Browser error inspection was empty.
 - Screenshot captured at `workfiles/agent-browser/screenshots/eventforge-production-landing-new.png`.
 
@@ -301,7 +301,7 @@ Reusable pattern: verify a rebrand across visible UI, compact SVG rendering, HTM
 
 ## 2026-07-22 — GitHub publish check (connector trust branch)
 
-- URL: `https://github.com/tebayoso/eventforge/compare/1.0-rc...codex%2Fissue-8-forge-connectors?expand=1`
+- URL: `https://github.com/sinequix/eventforge/compare/1.0-rc...codex%2Fissue-8-forge-connectors?expand=1`
 - Outcome: the branch comparison resolved to commit `5190f02`, but the browser was logged out (`Sign in` shown). GitHub CLI also reported its active token invalid, so no draft PR or review comment was created.
 - Reusable pattern: confirm the exact base/head comparison URL before publishing; authenticated GitHub browser or CLI state is required for PR creation and comments.
 

@@ -12,6 +12,12 @@ paths = [
   'plugins/eventforge/server/eventforge-mcp-http\.cjs',
   'plugins/eventforge/server/eventforge-mcp\.mjs',
 ]
+# Release identifiers in an older CONFIGURATION.md commit. generic-api-key
+# matches the UUID after "API version"; the entropy is too low for a key.
+regexes = [
+  '''d56ad744-eeb3-42be-8b24-7e4a3ed0ceac''',
+  '''1b8f90c2-00c9-4304-9dd1-32ab4d28591e''',
+]
 
 [[rules]]
 id = "generic-api-key"

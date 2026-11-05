@@ -1,0 +1,57 @@
+name: eventforge
+version: "0.1.0"
+manifest_version: 2
+description: Proxy the local EventForge control plane into Hermes with approval-gated tools, verified-event context, and a read-only triage skill.
+author: sinequix
+license: Apache-2.0
+homepage: https://github.com/sinequix/eventforge
+requires_hermes: ">=0.22.0"
+tags:
+  - events
+  - webhooks
+  - automation
+provides_tools:
+  - ef_listen_for_webhook
+  - ef_emit_event
+  - ef_query_memory
+  - ef_spawn_subagent
+  - ef_approve_action
+  - ef_forge_mcp
+  - ef_approve_forge
+  - ef_list_events
+  - ef_list_workflows
+provides_hooks:
+  - pre_llm_call
+  - pre_tool_call
+  - post_tool_call
+  - on_session_start
+config_schema:
+  api_url:
+    type: str
+    default: "http://127.0.0.1:4310"
+    description: Base URL of the EventForge control plane. Loopback may be http (default http://127.0.0.1:4310). A remote plane must be https.
+  api_token:
+    type: secret
+    env: EVENTFORGE_API_TOKEN
+    required: false
+    description: Bearer token for a protected control plane. Hermes stores it; the plugin reads it only with get_secret.
+  workspace_id:
+    type: str
+    default: demo-workspace
+    description: Workspace used when a tool call omits workspaceId.
+  project_id:
+    type: str
+    default: eventforge-demo-service
+    description: Project used when a tool call omits projectId.
+  auto_start:
+    type: bool
+    default: false
+    description: When true, an interactive session may start the repository's eventforge-standalone.cjs bundle with node if /health is down. Cron and the messaging gateway never do this.
+  request_timeout_seconds:
+    type: int
+    default: 10
+    description: HTTP timeout for control-plane calls. Capped at 5 seconds in cron and gateway sessions.
+  bundle_path:
+    type: str
+    default: ""
+    description: Absolute path to eventforge-standalone.cjs built from this repo. Empty uses the sibling plugins/eventforge/server bundle when this plugin is a checkout or a symlink into one. A catalog install has no sibling bundle; set bundle_path or run the control plane yourself. auto_start does not download a bundle.

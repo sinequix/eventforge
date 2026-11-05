@@ -31,9 +31,9 @@ import {
 } from "lucide-react";
 import { WaitlistForm } from "./WaitlistPage";
 
-const GITHUB_REPOSITORY = "https://github.com/tebayoso/eventforge";
-const CONFIGURATION_GUIDE = `${GITHUB_REPOSITORY}/blob/main/workfiles/CONFIGURATION.md`;
-const GITHUB_API = "https://api.github.com/repos/tebayoso/eventforge";
+const GITHUB_REPOSITORY = "https://github.com/sinequix/eventforge";
+const CONFIGURATION_GUIDE = `${GITHUB_REPOSITORY}/blob/master/workfiles/CONFIGURATION.md`;
+const GITHUB_API = "https://api.github.com/repos/sinequix/eventforge";
 
 const capabilities = [
   {
@@ -629,7 +629,7 @@ export default function LandingPage() {
           <pre>
             <code>
               {
-                'codex mcp add eventforge\n  --env EVENTFORGE_CODEX_WORKDIR="$PWD"\n  -- npx -y --package\n  github:tebayoso/eventforge eventforge-mcp'
+                'codex mcp add eventforge\n  --env EVENTFORGE_CODEX_WORKDIR="$PWD"\n  -- npx -y --package\n  github:sinequix/eventforge eventforge-mcp'
               }
             </code>
           </pre>

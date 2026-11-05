@@ -9,7 +9,7 @@ For hosted access, use the OAuth 2.1 discovery metadata at https://eventforge.de
 For an immediately usable agent client, install the credential-free local MCP transport:
 
 ```bash
-codex mcp add eventforge -- npx -y --package github:tebayoso/eventforge eventforge-mcp
+codex mcp add eventforge -- npx -y --package github:sinequix/eventforge eventforge-mcp
 ```
 
 The machine-readable client manifest is available at https://eventforge.dev/.well-known/agent-client.json. It includes the stdio command and the loopback Streamable HTTP alternative.

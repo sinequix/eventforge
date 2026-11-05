@@ -30,8 +30,8 @@ EventForge is the operational control plane for every hook, from receipt to veri
 ## Public resources
 
 - Product overview: https://eventforge.dev/
-- Configuration guide: https://github.com/tebayoso/eventforge/blob/main/workfiles/CONFIGURATION.md
-- Source repository: https://github.com/tebayoso/eventforge
+- Configuration guide: https://github.com/sinequix/eventforge/blob/master/workfiles/CONFIGURATION.md
+- Source repository: https://github.com/sinequix/eventforge
 - API catalog: https://eventforge.dev/.well-known/api-catalog
 - MCP server card: https://eventforge.dev/.well-known/mcp/server-card.json
 - Agent client manifest: https://eventforge.dev/.well-known/agent-client.json
@@ -41,7 +41,7 @@ EventForge is the operational control plane for every hook, from receipt to veri
 
 EventForge provides a local, credential-free MCP server for development and a hosted API for authenticated production operations. The local launcher is installed with:
 
-codex mcp add eventforge -- npx -y --package github:tebayoso/eventforge eventforge-mcp
+codex mcp add eventforge -- npx -y --package github:sinequix/eventforge eventforge-mcp
 
 The hosted console and remote MCP transport are intentionally sign-in gated. Public pages and discovery metadata contain no customer payloads or secrets.
 `;
@@ -134,7 +134,7 @@ const oauthAuthorizationServer = JSON.stringify({
 const homepageLinks = [
   '<https://eventforge.dev/sitemap.xml>; rel="sitemap"',
   '<https://eventforge.dev/.well-known/api-catalog>; rel="service-desc"; type="application/linkset+json"',
-  '<https://github.com/tebayoso/eventforge/blob/main/workfiles/CONFIGURATION.md>; rel="service-doc"; type="text/markdown"',
+  '<https://github.com/sinequix/eventforge/blob/master/workfiles/CONFIGURATION.md>; rel="service-doc"; type="text/markdown"',
   '<https://api.eventforge.dev/health>; rel="status"',
 ].join(", ");
 
