@@ -73,11 +73,11 @@ def _replay(plane: Plane, event_id: str) -> str:
     try:
         ready(plane)
         events = plane.client.request("GET", "/events")
-        runs = plane.client.request("GET", "/runs")
-        actions = plane.client.request("GET", "/actions")
-        audit = plane.client.request("GET", "/audit")
     except ControlPlaneError as exc:
         return f"EventForge replay: unavailable. {exc}"
+    runs = _optional(plane, "/runs")
+    actions = _optional(plane, "/actions")
+    audit = _optional(plane, "/audit")
     event = _find(events, event_id)
     if event is None:
         return f"EventForge replay: no event with id {event_id}."
@@ -142,6 +142,15 @@ def related_audit(event_id: str, runs: list[dict[str, Any]], actions: list[dict[
         if str(item.get("subjectId")) in subjects or event_id in str(item.get("message") or "")
     ]
     return sorted(matched, key=lambda item: str(item.get("createdAt") or ""))
+
+
+def _optional(plane: Plane, path: str) -> Any:
+    """Read a correlation source. A refused or failed read leaves that part out."""
+
+    try:
+        return plane.client.request("GET", path)
+    except ControlPlaneError:
+        return []
 
 
 def _dicts(value: Any) -> list[dict[str, Any]]:

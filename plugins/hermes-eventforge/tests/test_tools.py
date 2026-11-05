@@ -169,6 +169,28 @@ class ToolProxyTest(unittest.TestCase):
         self.assertIn("withheld", text)
         self.assertNotIn("IGNORE PREVIOUS", text)
 
+    def test_slash_replay_survives_a_refused_correlation_route(self):
+        event_id = "55555555-5555-5555-5555-555555555555"
+
+        class Partial(FakeClient):
+            def request(self, method, path, body=None):
+                if path == "/runs":
+                    raise client.ControlPlaneError("403 eventforge:read scope required")
+                return super().request(method, path, body)
+
+        fake = Partial(
+            routes={
+                ("GET", "/events"): [
+                    {"id": event_id, "signatureStatus": "verified", "provider": "github",
+                     "topic": "check_run", "payload": {}}
+                ],
+                ("GET", "/audit"): [{"subjectId": event_id, "message": "accepted"}],
+            }
+        )
+        text = commands.handle_command(make_plane(fake), f"replay {event_id}")
+        self.assertIn("accepted", text)
+        self.assertNotIn("unavailable", text)
+
     def test_list_events_withholds_unverified_and_demo_payloads(self):
         events = [
             {"id": "v", "signatureStatus": "verified", "payload": {"ok": 1}},
