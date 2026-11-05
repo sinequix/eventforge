@@ -7,7 +7,7 @@
         "type": "application/vnd.oai.openapi+json;version=3.1"
       }],
       "service-doc": [{
-        "href": "https://github.com/sinequix/eventforge/blob/main/workfiles/CONFIGURATION.md",
+        "href": "https://github.com/sinequix/eventforge/blob/master/workfiles/CONFIGURATION.md",
         "type": "text/markdown"
       }],
       "status": [{

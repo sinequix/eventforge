@@ -27,7 +27,7 @@ it("renders the public product story and working console entrypoint", () => {
   ).not.toBeNull();
   expect(
     container.querySelector<HTMLAnchorElement>(
-      'a[href="https://github.com/sinequix/eventforge/blob/main/workfiles/CONFIGURATION.md"]',
+      'a[href="https://github.com/sinequix/eventforge/blob/master/workfiles/CONFIGURATION.md"]',
     ),
   ).not.toBeNull();
   act(() => root.unmount());

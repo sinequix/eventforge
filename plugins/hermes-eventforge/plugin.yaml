@@ -29,7 +29,7 @@ config_schema:
   api_url:
     type: str
     default: "http://127.0.0.1:4310"
-    description: Loopback base URL of the EventForge control plane.
+    description: Base URL of the EventForge control plane. Loopback may be http (default http://127.0.0.1:4310). A remote plane must be https.
   api_token:
     type: secret
     env: EVENTFORGE_API_TOKEN
@@ -54,4 +54,4 @@ config_schema:
   bundle_path:
     type: str
     default: ""
-    description: Optional absolute path to eventforge-standalone.cjs. Empty uses the sibling plugins/eventforge/server bundle in a full checkout.
+    description: Absolute path to eventforge-standalone.cjs built from this repo. Empty uses the sibling plugins/eventforge/server bundle when this plugin is a checkout or a symlink into one. A catalog install has no sibling bundle; set bundle_path or run the control plane yourself. auto_start does not download a bundle.

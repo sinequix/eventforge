@@ -57,7 +57,8 @@ def pre_tool_call(tool_name: str = "", args: dict[str, Any] | None = None, **kwa
     del kwargs
     if tool_name not in APPROVAL_TOOLS:
         return None
-    detail = _approval_detail(tool_name, args or {})
+    safe_args = args or {}
+    detail = _approval_detail(tool_name, safe_args)
     return {
         "action": "approve",
         "message": (
@@ -65,7 +66,7 @@ def pre_tool_call(tool_name: str = "", args: dict[str, Any] | None = None, **kwa
             "Hermes must approve this before it runs. "
             "Denying it does not approve anything inside EventForge."
         ),
-        "rule_key": tool_name,
+        "rule_key": _rule_key(tool_name, safe_args),
     }
 
 
@@ -139,6 +140,20 @@ def _event_line(event: dict[str, Any]) -> str:
         f"repo={event.get('repository') or '-'} at {event.get('occurredAt') or event.get('receivedAt') or '-'} "
         f"payload={preview}"
     )
+
+
+def _rule_key(tool_name: str, args: dict[str, Any]) -> str:
+    """Scope an [a]lways allow to one decision id for irreversible tools.
+
+    ``ef_spawn_subagent`` and ``ef_forge_mcp`` stay keyed by tool name. Approving
+    one action or forge draft must not allow the next one.
+    """
+
+    if tool_name == "ef_approve_action":
+        return f"{tool_name}:{args.get('actionId') or ''}"
+    if tool_name == "ef_approve_forge":
+        return f"{tool_name}:{args.get('forgeId') or ''}"
+    return tool_name
 
 
 def _approval_detail(tool_name: str, args: dict[str, Any]) -> str:

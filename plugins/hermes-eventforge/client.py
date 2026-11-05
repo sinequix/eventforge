@@ -51,6 +51,20 @@ def is_loopback(base_url: str) -> bool:
     return host in LOOPBACK_HOSTS
 
 
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects so a bearer token cannot be forwarded to another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ControlPlaneError(
+            f"EventForge API returned redirect {code}. Redirects are not followed, "
+            "so Authorization is not sent to another host."
+        )
+
+
+def _opener() -> urllib.request.OpenerDirector:
+    return urllib.request.build_opener(_RejectRedirects)
+
+
 class ControlPlaneClient:
     """Small JSON client. ``transport`` is a test seam; production uses urllib."""
 
@@ -97,7 +111,7 @@ def _urllib_transport(
         headers["authorization"] = f"Bearer {client.token}"
     request = urllib.request.Request(client.base_url + path, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=client.timeout) as response:
+        with _opener().open(request, timeout=client.timeout) as response:
             raw = response.read()
             status = getattr(response, "status", 200)
     except urllib.error.HTTPError as exc:

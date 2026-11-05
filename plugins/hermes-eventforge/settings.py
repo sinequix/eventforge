@@ -36,7 +36,7 @@ def load_settings(ctx: Any, *, fail_closed: bool | None = None) -> Settings:
         token=read_api_token(),
         workspace_id=_text(ctx.get_config("workspace_id", "demo-workspace"), "demo-workspace"),
         project_id=_text(ctx.get_config("project_id", "eventforge-demo-service"), "eventforge-demo-service"),
-        auto_start=bool(ctx.get_config("auto_start", False)),
+        auto_start=_bool(ctx.get_config("auto_start", False), False),
         timeout=timeout,
         bundle_path=_text(ctx.get_config("bundle_path", ""), ""),
         fail_closed=closed,
@@ -71,6 +71,29 @@ def _timeout(raw: Any, fail_closed: bool) -> float:
     if fail_closed:
         return min(timeout, 5.0)
     return timeout
+
+
+_TRUE = frozenset({"1", "true", "yes", "on"})
+_FALSE = frozenset({"0", "false", "no", "off"})
+
+
+def _bool(value: Any, default: bool) -> bool:
+    """Parse a config boolean. The string "false" is false, not true."""
+
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, int) and value in (0, 1):
+        return value == 1
+    text = str(value).strip().lower()
+    if text in _TRUE:
+        return True
+    if text in _FALSE:
+        return False
+    if text == "":
+        return default
+    raise ControlPlaneError(f"auto_start must be true or false, got {value!r}.")
 
 
 def _text(value: Any, default: str) -> str:

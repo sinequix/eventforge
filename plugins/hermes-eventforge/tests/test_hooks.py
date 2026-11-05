@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from support import FakeClient, client, hooks, make_plane
+from support import FakeClient, Memory, client, hooks, make_plane, plugin
 
 
 class HookTest(unittest.TestCase):
@@ -30,19 +30,41 @@ class HookTest(unittest.TestCase):
         self.assertIsNone(second)
 
     def test_pre_tool_call_escalates_and_does_not_approve(self):
-        for name in (
-            "ef_approve_action",
-            "ef_forge_mcp",
-            "ef_spawn_subagent",
-            "ef_approve_forge",
-        ):
-            directive = hooks.pre_tool_call(tool_name=name, args={"actionId": "1", "approved": True})
+        action = hooks.pre_tool_call(
+            tool_name="ef_approve_action",
+            args={"actionId": "act-1", "approved": True},
+        )
+        forge = hooks.pre_tool_call(
+            tool_name="ef_approve_forge",
+            args={"forgeId": "fg-9", "approved": False},
+        )
+        spawn = hooks.pre_tool_call(tool_name="ef_spawn_subagent", args={"eventId": "evt"})
+        draft = hooks.pre_tool_call(tool_name="ef_forge_mcp", args={"prompt": "status"})
+        for directive in (action, forge, spawn, draft):
             self.assertEqual(directive["action"], "approve")
             self.assertNotIn("approved", directive)
             self.assertIn("Hermes must approve", directive["message"])
-            self.assertEqual(directive["rule_key"], name)
+        self.assertEqual(action["rule_key"], "ef_approve_action:act-1")
+        self.assertEqual(forge["rule_key"], "ef_approve_forge:fg-9")
+        self.assertEqual(spawn["rule_key"], "ef_spawn_subagent")
+        self.assertEqual(draft["rule_key"], "ef_forge_mcp")
+        self.assertNotEqual(action["rule_key"], spawn["rule_key"])
         self.assertIsNone(hooks.pre_tool_call(tool_name="ef_list_events", args={}))
         self.assertIsNone(hooks.pre_tool_call(tool_name="terminal", args={"command": "rm -rf /"}))
+
+    def test_register_records_tools_hooks_command_and_skill(self):
+        ctx = _FakeCtx()
+        plugin.register(ctx)
+        self.assertEqual(len(ctx.tools), 9)
+        self.assertEqual(
+            {name for name, _callback in ctx.hooks},
+            {"pre_llm_call", "pre_tool_call", "post_tool_call", "on_session_start"},
+        )
+        self.assertEqual(ctx.commands, ["eventforge"])
+        self.assertEqual(ctx.skills, ["triage"])
+        pre = dict(ctx.hooks)["pre_tool_call"]
+        directive = pre(tool_name="ef_approve_forge", args={"forgeId": "fg-2"})
+        self.assertEqual(directive["rule_key"], "ef_approve_forge:fg-2")
 
     def test_post_tool_call_audits_without_the_result_body(self):
         fake = FakeClient(routes={("POST", "/audit"): {"kind": "hermes_tool"}})
@@ -84,15 +106,25 @@ class HookTest(unittest.TestCase):
         self.assertEqual(state.get("health")["service"], "eventforge-control-plane")
 
 
-class Memory:
+class _FakeCtx:
     def __init__(self):
-        self.data = {}
+        self.tools = []
+        self.hooks = []
+        self.commands = []
+        self.skills = []
+        self.state = Memory()
 
-    def get(self, key, default=None):
-        return self.data.get(key, default)
+    def register_tool(self, **kwargs):
+        self.tools.append(kwargs)
 
-    def set(self, key, value):
-        self.data[key] = value
+    def register_hook(self, name, callback):
+        self.hooks.append((name, callback))
+
+    def register_command(self, name, **kwargs):
+        self.commands.append(name)
+
+    def register_skill(self, name, path, **kwargs):
+        self.skills.append(name)
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ def _session_value(name: str) -> str:
 
 
 def is_fail_closed_context() -> bool:
-    """Cron, programmatic platforms, and the messaging gateway.
+    """Cron, kanban, single-query, programmatic platforms, and the messaging gateway.
 
     Interactive CLI, TUI, and Desktop sessions are the places a person can
     approve a tool or start the control plane. Everywhere else the plugin
@@ -37,6 +37,10 @@ def is_fail_closed_context() -> bool:
     """
 
     if _session_value("HERMES_CRON_SESSION").lower() in _TRUTHY:
+        return True
+    if _session_value("HERMES_SINGLE_QUERY_SESSION").lower() in _TRUTHY:
+        return True
+    if _session_value("HERMES_KANBAN_TASK"):
         return True
     platform = _session_value("HERMES_SESSION_PLATFORM").lower()
     if platform in _PROGRAMMATIC_PLATFORMS:

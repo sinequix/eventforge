@@ -32,7 +32,7 @@ import {
 import { WaitlistForm } from "./WaitlistPage";
 
 const GITHUB_REPOSITORY = "https://github.com/sinequix/eventforge";
-const CONFIGURATION_GUIDE = `${GITHUB_REPOSITORY}/blob/main/workfiles/CONFIGURATION.md`;
+const CONFIGURATION_GUIDE = `${GITHUB_REPOSITORY}/blob/master/workfiles/CONFIGURATION.md`;
 const GITHUB_API = "https://api.github.com/repos/sinequix/eventforge";
 
 const capabilities = [

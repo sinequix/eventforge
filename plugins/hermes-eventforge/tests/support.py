@@ -26,7 +26,7 @@ def load_plugin():
     return module
 
 
-load_plugin()
+plugin = load_plugin()
 tools = sys.modules[f"{PACKAGE}.tools"]
 hooks = sys.modules[f"{PACKAGE}.hooks"]
 commands = sys.modules[f"{PACKAGE}.commands"]
@@ -34,6 +34,7 @@ client = sys.modules[f"{PACKAGE}.client"]
 bundle = sys.modules[f"{PACKAGE}.bundle"]
 plane_mod = sys.modules[f"{PACKAGE}.plane"]
 settings_mod = sys.modules[f"{PACKAGE}.settings"]
+runtime = sys.modules[f"{PACKAGE}.runtime"]
 
 
 class FakeClient:

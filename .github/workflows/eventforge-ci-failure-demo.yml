@@ -6,7 +6,7 @@ on:
 jobs:
   intentional-failure:
     name: Intentional EventForge test failure
-    runs-on: [self-hosted, Linux, X64, ian-hetzner]
+    runs-on: ubuntu-latest
     steps:
       - name: Emit a deliberate failed check run
         run: |

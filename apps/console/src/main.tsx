@@ -29,7 +29,7 @@ function registerWebMcpTool() {
     execute: async () => ({
       install:
         "codex mcp add eventforge -- npx -y --package github:sinequix/eventforge eventforge-mcp",
-      docs: "https://github.com/sinequix/eventforge/blob/main/workfiles/CONFIGURATION.md",
+      docs: "https://github.com/sinequix/eventforge/blob/master/workfiles/CONFIGURATION.md",
       repository: "https://github.com/sinequix/eventforge",
     }),
     annotations: { readOnlyHint: true },

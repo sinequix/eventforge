@@ -30,7 +30,7 @@ EventForge is the operational control plane for every hook, from receipt to veri
 ## Public resources
 
 - Product overview: https://eventforge.dev/
-- Configuration guide: https://github.com/sinequix/eventforge/blob/main/workfiles/CONFIGURATION.md
+- Configuration guide: https://github.com/sinequix/eventforge/blob/master/workfiles/CONFIGURATION.md
 - Source repository: https://github.com/sinequix/eventforge
 - API catalog: https://eventforge.dev/.well-known/api-catalog
 - MCP server card: https://eventforge.dev/.well-known/mcp/server-card.json
@@ -134,7 +134,7 @@ const oauthAuthorizationServer = JSON.stringify({
 const homepageLinks = [
   '<https://eventforge.dev/sitemap.xml>; rel="sitemap"',
   '<https://eventforge.dev/.well-known/api-catalog>; rel="service-desc"; type="application/linkset+json"',
-  '<https://github.com/sinequix/eventforge/blob/main/workfiles/CONFIGURATION.md>; rel="service-doc"; type="text/markdown"',
+  '<https://github.com/sinequix/eventforge/blob/master/workfiles/CONFIGURATION.md>; rel="service-doc"; type="text/markdown"',
   '<https://api.eventforge.dev/health>; rel="status"',
 ].join(", ");
 

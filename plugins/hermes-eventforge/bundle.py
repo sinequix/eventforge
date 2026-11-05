@@ -15,22 +15,47 @@ from pathlib import Path
 
 from .client import ControlPlaneClient, ControlPlaneError, is_loopback
 
+try:
+    from plugins.plugin_storage import plugin_data_dir
+except ImportError:
+    plugin_data_dir = None
+
 BUNDLE_FILENAME = "eventforge-standalone.cjs"
+CATALOG_BUNDLE_MESSAGE = (
+    "catalog install: set bundle_path or run the EventForge control plane yourself"
+)
+STDERR_CAP = 256 * 1024
+_STDERR_TAIL = 500
 _lock = threading.Lock()
 _process: subprocess.Popen[bytes] | None = None
+_stderr_paths: dict[int, Path] = {}
 
 
-def sibling_bundle() -> Path:
+def sibling_bundle(plugin_file: Path | None = None) -> Path:
     """``plugins/eventforge/server/eventforge-standalone.cjs`` next to this plugin."""
 
-    return Path(__file__).resolve().parents[1] / "eventforge" / "server" / BUNDLE_FILENAME
+    anchor = Path(plugin_file or __file__).resolve()
+    return anchor.parents[1] / "eventforge" / "server" / BUNDLE_FILENAME
 
 
-def resolve_bundle(configured: str) -> Path:
+def is_symlink_or_checkout(plugin_file: Path | None = None) -> bool:
+    """A local symlink or a repo checkout can see the sibling bundle."""
+
+    raw_dir = Path(plugin_file or __file__).parent
+    if raw_dir.is_symlink():
+        return True
+    resolved = raw_dir.resolve()
+    sibling = resolved.parent / "eventforge"
+    return sibling.is_dir() and sibling.resolve() != resolved
+
+
+def resolve_bundle(configured: str, *, plugin_file: Path | None = None) -> Path:
     if configured.strip():
         path = Path(configured).expanduser().resolve()
     else:
-        path = sibling_bundle()
+        path = sibling_bundle(plugin_file)
+        if not path.is_file() and not is_symlink_or_checkout(plugin_file):
+            raise ControlPlaneError(CATALOG_BUNDLE_MESSAGE)
     if path.name != BUNDLE_FILENAME:
         raise ControlPlaneError(
             "bundle_path must name eventforge-standalone.cjs built from this repository."
@@ -46,14 +71,44 @@ def resolve_bundle(configured: str) -> Path:
     return path
 
 
-def ensure_started(client: ControlPlaneClient, bundle_path: str, *, allow: bool) -> None:
+def ensure_started(
+    client: ControlPlaneClient,
+    bundle_path: str,
+    *,
+    allow: bool,
+    stderr_dir: Path | None = None,
+) -> None:
     """Make sure /health answers. Spawn the bundle only when ``allow`` is true."""
 
     if _healthy(client):
         return
     if not allow or not is_loopback(client.base_url):
         raise ControlPlaneError(_down_message(client.base_url, fail_closed=not allow))
-    _spawn_and_wait(client, bundle_path)
+    _spawn_and_wait(client, bundle_path, stderr_dir)
+
+
+def prepare_stderr_log(directory: Path) -> Path:
+    """Return the stderr log, rotating the previous file once it passes the cap."""
+
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "bundle-stderr.log"
+    if path.is_file() and path.stat().st_size >= STDERR_CAP:
+        previous = directory / "bundle-stderr.log.1"
+        if previous.exists():
+            previous.unlink()
+        path.replace(previous)
+    path.touch()
+    return path
+
+
+def read_stderr_tail(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    return data[-_STDERR_TAIL:].decode("utf-8", "replace").strip()
 
 
 def _healthy(client: ControlPlaneClient) -> bool:
@@ -64,13 +119,17 @@ def _healthy(client: ControlPlaneClient) -> bool:
     return isinstance(body, dict) and body.get("ok") is True and body.get("service") == "eventforge-control-plane"
 
 
-def _spawn_and_wait(client: ControlPlaneClient, configured: str) -> None:
+def _spawn_and_wait(
+    client: ControlPlaneClient,
+    configured: str,
+    stderr_dir: Path | None,
+) -> None:
     global _process
     with _lock:
         if _process is not None and _process.poll() is None:
             process = _process
         else:
-            process = _spawn(configured)
+            process = _spawn(configured, stderr_dir)
             _process = process
     try:
         _wait_until_healthy(client, process)
@@ -79,7 +138,17 @@ def _spawn_and_wait(client: ControlPlaneClient, configured: str) -> None:
         raise
 
 
-def _spawn(configured: str) -> subprocess.Popen[bytes]:
+def _stderr_directory(explicit: Path | None) -> Path:
+    if explicit is not None:
+        return explicit
+    if plugin_data_dir is not None:
+        return plugin_data_dir("eventforge")
+    fallback = Path.home() / ".hermes" / "plugin-data" / "eventforge"
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
+def _spawn(configured: str, stderr_dir: Path | None) -> subprocess.Popen[bytes]:
     bundle = resolve_bundle(configured)
     node = shutil.which("node")
     if not node:
@@ -87,17 +156,45 @@ def _spawn(configured: str) -> subprocess.Popen[bytes]:
             "node was not found on PATH. The EventForge bundle needs Node.js 20.11 or newer. "
             "Nothing was downloaded."
         )
+    log_path = prepare_stderr_log(_stderr_directory(stderr_dir))
+    handle = open(log_path, "ab")
     try:
         # stdin stays open: the bundle stops its embedded plane when stdin closes.
+        # stderr is a file, not a pipe, so a chatty child cannot fill a buffer and block.
         # env is inherited so this process does not copy or rewrite secrets.
-        return subprocess.Popen(
+        process = subprocess.Popen(
             [node, str(bundle)],
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=handle,
         )
     except OSError as exc:
         raise ControlPlaneError(f"Could not start the EventForge bundle: {exc}") from exc
+    finally:
+        handle.close()
+    _stderr_paths[id(process)] = log_path
+    _cap_stderr(process, log_path)
+    return process
+
+
+def _cap_stderr(process: subprocess.Popen[bytes], path: Path) -> None:
+    def watch() -> None:
+        while process.poll() is None:
+            time.sleep(0.5)
+            _truncate_to_cap(path)
+        _truncate_to_cap(path)
+
+    threading.Thread(target=watch, name="eventforge-bundle-stderr", daemon=True).start()
+
+
+def _truncate_to_cap(path: Path) -> None:
+    try:
+        if not path.is_file() or path.stat().st_size <= STDERR_CAP:
+            return
+        data = path.read_bytes()[-STDERR_CAP:]
+        path.write_bytes(data)
+    except OSError:
+        return
 
 
 def _wait_until_healthy(client: ControlPlaneClient, process: subprocess.Popen[bytes]) -> None:
@@ -115,13 +212,10 @@ def _wait_until_healthy(client: ControlPlaneClient, process: subprocess.Popen[by
 
 
 def _stderr_tail(process: subprocess.Popen[bytes]) -> str:
-    if process.stderr is None:
+    path = _stderr_paths.get(id(process))
+    if path is None:
         return ""
-    try:
-        data = process.stderr.read(500)
-    except Exception:
-        return ""
-    return data.decode("utf-8", "replace").strip()
+    return read_stderr_tail(path)
 
 
 def _stop(process: subprocess.Popen[bytes]) -> None:

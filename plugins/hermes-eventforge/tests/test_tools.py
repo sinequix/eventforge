@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import FakeClient, client, commands, make_plane, tools
+from support import FakeClient, client, commands, make_plane, runtime, settings_mod, tools
 from support import bundle as bundle_mod
 
 
@@ -150,6 +150,87 @@ class ToolProxyTest(unittest.TestCase):
             bundle_mod.ensure_started(fake, "", allow=False)
         self.assertIn("do not start it", str(caught.exception))
         self.assertTrue(fake.calls)
+
+    def test_catalog_install_without_a_bundle_fails_clearly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            plugin_file = Path(tmp) / "eventforge" / "bundle.py"
+            plugin_file.parent.mkdir()
+            plugin_file.write_text("# catalog copy\n", encoding="utf-8")
+            with self.assertRaises(client.ControlPlaneError) as caught:
+                bundle_mod.resolve_bundle("", plugin_file=plugin_file)
+        self.assertEqual(str(caught.exception), bundle_mod.CATALOG_BUNDLE_MESSAGE)
+
+    def test_checkout_without_a_built_bundle_names_the_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plugin_file = root / "plugins" / "hermes-eventforge" / "bundle.py"
+            plugin_file.parent.mkdir(parents=True)
+            plugin_file.write_text("# checkout\n", encoding="utf-8")
+            (root / "plugins" / "eventforge" / "server").mkdir(parents=True)
+            with self.assertRaises(client.ControlPlaneError) as caught:
+                bundle_mod.resolve_bundle("", plugin_file=plugin_file)
+        self.assertIn("bundle:plugin", str(caught.exception))
+        self.assertNotIn("catalog install", str(caught.exception))
+
+    def test_stderr_log_rotates_and_is_not_a_pipe(self):
+        node = __import__("shutil").which("node")
+        if not node:
+            self.skipTest("node is not on PATH")
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            log = bundle_mod.prepare_stderr_log(directory)
+            log.write_bytes(b"x" * bundle_mod.STDERR_CAP)
+            rotated = bundle_mod.prepare_stderr_log(directory)
+            self.assertTrue((directory / "bundle-stderr.log.1").is_file())
+            self.assertEqual(rotated.stat().st_size, 0)
+            bundle = directory / "eventforge-standalone.cjs"
+            bundle.write_text("process.stderr.write('bundle-said-hello\\n')\n", encoding="utf-8")
+            process = bundle_mod._spawn(str(bundle), directory)
+            self.assertIsNone(process.stderr)
+            process.wait(timeout=5)
+            self.assertIn("bundle-said-hello", bundle_mod._stderr_tail(process))
+
+    def test_false_string_does_not_enable_auto_start(self):
+        disabled = settings_mod.load_settings(_Config({"auto_start": "false"}), fail_closed=True)
+        enabled = settings_mod.load_settings(_Config({"auto_start": "true"}), fail_closed=True)
+        self.assertFalse(disabled.auto_start)
+        self.assertTrue(enabled.auto_start)
+        with self.assertRaises(client.ControlPlaneError):
+            settings_mod.load_settings(_Config({"auto_start": "maybe"}), fail_closed=True)
+
+    def test_kanban_and_single_query_are_unattended(self):
+        original = runtime.get_session_env
+
+        def lookup(name):
+            return {
+                "HERMES_KANBAN_TASK": "task-1",
+                "HERMES_SESSION_PLATFORM": "cli",
+            }.get(name, "")
+
+        runtime.get_session_env = lookup
+        try:
+            self.assertTrue(runtime.is_fail_closed_context())
+            runtime.get_session_env = lambda name: (
+                "1" if name == "HERMES_SINGLE_QUERY_SESSION" else ""
+            )
+            self.assertTrue(runtime.is_fail_closed_context())
+        finally:
+            runtime.get_session_env = original
+
+    def test_redirects_are_rejected(self):
+        with self.assertRaises(client.ControlPlaneError) as caught:
+            client._RejectRedirects().redirect_request(
+                None, None, 302, "Found", {}, "https://evil.example/steal"
+            )
+        self.assertIn("Authorization", str(caught.exception))
+
+
+class _Config:
+    def __init__(self, values):
+        self.values = values
+
+    def get_config(self, key, default=None):
+        return self.values.get(key, default)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ concurrency:
 jobs:
   validate:
     name: Quality (Node ${{ matrix.node }})
-    runs-on: [self-hosted, Linux, X64, ian-hetzner]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -38,7 +38,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm quality
       - name: Verify committed plugin bundle is current
-        run: git diff --exit-code -- plugins/eventforge/server/eventforge-mcp.mjs
+        run: git diff --exit-code -- plugins/eventforge/server/eventforge-mcp.mjs plugins/eventforge/server/eventforge-standalone.cjs plugins/eventforge/server/eventforge-mcp-http.cjs
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level high
       # Non-blocking: the build/dev tooling tree currently carries
@@ -55,7 +55,7 @@ jobs:
 
   electron-package:
     name: Package Electron application
-    runs-on: [self-hosted, Linux, X64, ian-hetzner]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +71,7 @@ jobs:
 
   deployment-manifests:
     name: Validate deployment manifests
-    runs-on: [self-hosted, Linux, X64, ian-hetzner]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -99,7 +99,7 @@ jobs:
 
   hermes-plugin:
     name: Hermes plugin tests
-    runs-on: [self-hosted, Linux, X64, ian-hetzner]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -108,7 +108,7 @@ jobs:
 
   secret-scan:
     name: Scan committed content for secrets
-    runs-on: [self-hosted, Linux, X64, ian-hetzner]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

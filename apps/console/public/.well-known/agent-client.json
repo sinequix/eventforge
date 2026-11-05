@@ -24,6 +24,6 @@
     "url": "https://api.eventforge.dev/mcp",
     "status": "gated",
     "authentication": "oauth-2.1-when-enabled",
-    "documentation": "https://github.com/sinequix/eventforge/blob/main/workfiles/CONFIGURATION.md#remote-streamable-http"
+    "documentation": "https://github.com/sinequix/eventforge/blob/master/workfiles/CONFIGURATION.md#remote-streamable-http"
   }
 }

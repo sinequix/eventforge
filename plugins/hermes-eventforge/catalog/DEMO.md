@@ -20,7 +20,7 @@ node plugins/eventforge/server/eventforge-standalone.cjs
 Terminal B:
 
 ```bash
-hermes plugins install ./plugins/hermes-eventforge
+ln -s "$PWD/plugins/hermes-eventforge" ~/.hermes/plugins/eventforge
 hermes plugins enable eventforge
 hermes
 ```
