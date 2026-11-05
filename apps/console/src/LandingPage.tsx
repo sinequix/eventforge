@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Mark } from "./Mark";
 import {
   ArrowUpRight,
-  Asterisk,
   BellRing,
   Braces,
   Check,
@@ -20,7 +19,6 @@ import {
   Globe2,
   LockKeyhole,
   Mail,
-  Play,
   RotateCcw,
   ShieldCheck,
   Sparkles,
@@ -34,6 +32,27 @@ import { WaitlistForm } from "./WaitlistPage";
 const GITHUB_REPOSITORY = "https://github.com/sinequix/eventforge";
 const CONFIGURATION_GUIDE = `${GITHUB_REPOSITORY}/blob/master/workfiles/CONFIGURATION.md`;
 const GITHUB_API = "https://api.github.com/repos/sinequix/eventforge";
+const HERMES_CATALOG_PR = "https://github.com/NousResearch/hermes-agent/pull/149194";
+const HERMES_INSTALL =
+  'ln -s "$PWD/plugins/hermes-eventforge" ~/.hermes/plugins/eventforge\nhermes plugins enable eventforge';
+
+const howItWorks = [
+  {
+    marker: "01",
+    text: "Point your GitHub, Linear or Sentry webhook at EventForge.",
+    icon: Waves,
+  },
+  {
+    marker: "02",
+    text: "EventForge verifies the signature. Events that fail verification are kept out of the model's context.",
+    icon: Fingerprint,
+  },
+  {
+    marker: "03",
+    text: "Your agent reads the event and proposes what to do. Anything that writes waits until you approve it.",
+    icon: ShieldCheck,
+  },
+];
 
 const capabilities = [
   {
@@ -334,43 +353,83 @@ export default function LandingPage() {
 
       <section className="ef-hero">
         <div className="ef-hero-copy">
-          <div className="ef-eyebrow">
-            <Asterisk size={14} /> The operational control plane for every hook
-          </div>
           <h1>
-            Every hook.
-            <br />
-            One control plane.
-            <br />
-            <em>Verified outcomes.</em>
+            Let your agent react to <em>real webhooks.</em>
           </h1>
           <p className="ef-hero-intro">
-            Ingest, route, observe, replay, and safely react to webhook-driven work from receipt to
-            outcome. EventForge gives developer and platform teams one place to see what happened,
-            why it matters, and what is safe to do next.
+            EventForge checks GitHub, Linear and Sentry signatures before an event reaches your
+            model. It runs on your machine, and any action that writes waits for your OK.
           </p>
           <div className="ef-hero-actions">
-            <a className="ef-primary-cta" href="#install">
-              Install with Codex <Terminal size={17} />
+            <a className="ef-primary-cta" href={GITHUB_REPOSITORY} target="_blank" rel="noreferrer">
+              View on GitHub <Github size={17} />
             </a>
-            <a className="ef-secondary-cta" href="/console">
-              Open the console <ArrowUpRight size={16} />
+            <a className="ef-secondary-cta" href="#hermes">
+              Hermes plugin <ArrowUpRight size={16} />
             </a>
-            <a
-              className="ef-text-cta"
-              href="https://youtu.be/pht3rrl--pE"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Play size={15} fill="currentColor" /> Watch the demo
-            </a>
-          </div>
-          <div className="ef-hero-footnote">
-            <span className="ef-live-dot" /> Free local demo · 9 MCP tools · GitHub, Linear, Sentry,
-            and custom events
           </div>
         </div>
         <TraceBoard />
+      </section>
+
+      <section className="ef-install" id="hermes">
+        <div className="ef-install-copy">
+          <span className="ef-eyebrow">
+            <Terminal size={14} /> Hermes Agent plugin
+          </span>
+          <h2>
+            EventForge for
+            <br />
+            <em>Hermes Agent.</em>
+          </h2>
+          <p>
+            EventForge now ships as a plugin for Hermes Agent, built for the Nous Research plugin
+            hackathon. Install it from a checkout of sinequix/eventforge.
+          </p>
+          <p>
+            We&apos;ve submitted it to the Hermes plugin catalog (
+            <a href={HERMES_CATALOG_PR} target="_blank" rel="noreferrer">
+              NousResearch/hermes-agent#149194
+            </a>
+            ).
+          </p>
+        </div>
+        <div className="ef-code-card">
+          <div className="ef-code-header">
+            <span>
+              <span className="ef-code-dot" /> Hermes Agent
+            </span>
+            <span>from a checkout of sinequix/eventforge</span>
+          </div>
+          <pre>
+            <code>{HERMES_INSTALL}</code>
+          </pre>
+          <div className="ef-code-footer">
+            <CircleCheck size={15} /> Talks to the control plane at 127.0.0.1:4310
+          </div>
+        </div>
+      </section>
+
+      <section className="ef-principles" id="how-it-works">
+        <div className="ef-section-heading">
+          <span className="ef-section-label">How it works</span>
+          <h2>
+            Signed events in.
+            <br />
+            Your OK before writes.
+          </h2>
+        </div>
+        <ol className="ef-principle-grid">
+          {howItWorks.map(({ marker, text, icon: Icon }) => (
+            <li className="ef-principle" key={marker}>
+              <div className="ef-principle-head">
+                <span>{marker}</span>
+                <Icon size={20} />
+              </div>
+              <p>{text}</p>
+            </li>
+          ))}
+        </ol>
       </section>
 
       <section className="ef-proof-strip" aria-label="EventForge product facts">
@@ -690,7 +749,7 @@ export default function LandingPage() {
           <Mark />
           <span>EventForge</span>
         </a>
-        <span>Policy-first operations for event-driven teams.</span>
+        <span>Open source. Made by Sinequix in Tandil, Argentina.</span>
         <div className="ef-footer-links">
           <a href="#waitlist">Waitlist</a>
           <a href={CONFIGURATION_GUIDE} target="_blank" rel="noreferrer">

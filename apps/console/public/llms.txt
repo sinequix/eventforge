@@ -1,0 +1,36 @@
+# EventForge
+
+> EventForge lets an AI agent react to real webhooks. It checks GitHub, Linear and Sentry signatures before an event reaches the model, runs on your machine, and holds any action that writes until a person approves it.
+
+EventForge is open source and made by Sinequix in Tandil, Argentina. The control plane runs locally on 127.0.0.1:4310. EventForge verifies every signature. Events that fail verification are kept out of the model's context. Agents investigate read-only and propose what to do; every write needs an explicit approval and is recorded in an audit trail.
+
+## Use it with Hermes Agent
+
+EventForge ships as a Hermes Agent plugin, built for the Nous Research plugin hackathon. Install it from a checkout of sinequix/eventforge:
+
+```
+ln -s "$PWD/plugins/hermes-eventforge" ~/.hermes/plugins/eventforge
+hermes plugins enable eventforge
+```
+
+The plugin adds `/eventforge status`, `/eventforge events` and `/eventforge replay`, injects verified events into the turn as untrusted evidence, and asks for approval before any tool call that writes. It has been submitted to the Hermes plugin catalog (https://github.com/NousResearch/hermes-agent/pull/149194) and is not in the catalog yet.
+
+## Use it with Codex or any MCP client
+
+```
+codex mcp add eventforge --env EVENTFORGE_CODEX_WORKDIR="$PWD" -- npx -y --package github:sinequix/eventforge eventforge-mcp
+```
+
+## Docs
+
+- [Source code](https://github.com/sinequix/eventforge): repository, issues and releases
+- [Configuration](https://github.com/sinequix/eventforge/blob/master/workfiles/CONFIGURATION.md): environment variables, webhook secrets, relay and tunnel setup
+- [Hermes plugin](https://github.com/sinequix/eventforge/tree/master/plugins/hermes-eventforge): plugin README, hooks and permissions
+- [Signed run notifications](https://github.com/sinequix/eventforge/blob/master/workfiles/NOTIFICATION_SINKS.md): outbound webhook format and signature
+- [Security](https://github.com/sinequix/eventforge/blob/master/workfiles/SECURITY.md): threat model and reporting
+
+## Optional
+
+- [Agent card](https://eventforge.dev/.well-known/agent-card.json)
+- [MCP server card](https://eventforge.dev/.well-known/mcp/server-card.json)
+- [API catalog](https://eventforge.dev/.well-known/api-catalog)
