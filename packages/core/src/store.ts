@@ -7,7 +7,39 @@ import type {
   ForgeJob,
   WorkflowDefinition,
 } from "./contracts.js";
-import { ScopedMemory } from "./memory.js";
+import { ScopedMemory, type MemoryRecord } from "./memory.js";
+
+export const STATE_COLLECTIONS = [
+  "events",
+  "workflows",
+  "actions",
+  "runs",
+  "forges",
+  "audit",
+  "memory",
+] as const;
+export type StateCollection = (typeof STATE_COLLECTIONS)[number];
+
+/** One upserted record. `workspaceId` routes it to its durable partition. */
+export type StateChange = {
+  collection: StateCollection;
+  id: string;
+  workspaceId: string;
+  body: unknown;
+};
+
+/** Persisted records per collection, oldest first (the order they were created). */
+export type StateSnapshot = {
+  events?: EventEnvelope[];
+  workflows?: WorkflowDefinition[];
+  actions?: ActionProposal[];
+  runs?: AgentRun[];
+  forges?: ForgeJob[];
+  audit?: AuditEntry[];
+  memory?: MemoryRecord[];
+};
+
+const FALLBACK_WORKSPACE = "demo-workspace";
 
 export type DecisionResult<T> = {
   value?: T;
@@ -25,6 +57,61 @@ export class EventForgeStore {
   #audit: AuditEntry[] = [];
   #dedupe = new Set<string>();
   #auditListeners = new Set<(entry: AuditEntry) => void | Promise<void>>();
+  #changeListeners = new Set<(change: StateChange) => void>();
+
+  constructor() {
+    this.memory.subscribe((record) => this.#emit("memory", record.id, record.workspaceId, record));
+  }
+
+  /**
+   * Notified synchronously after every mutation with a full copy of the record.
+   * Listeners must not throw; they are expected to queue the change for persistence.
+   */
+  subscribeChanges(listener: (change: StateChange) => void): () => void {
+    this.#changeListeners.add(listener);
+    return () => this.#changeListeners.delete(listener);
+  }
+
+  /** Load persisted state (oldest first per collection). Replaces current contents; no change events. */
+  hydrate(snapshot: StateSnapshot): void {
+    const newestFirst = <T>(items: T[] | undefined) => [...(items ?? [])].reverse();
+    this.#events = newestFirst(snapshot.events);
+    this.#dedupe = new Set(this.#events.map((event) => event.dedupeKey));
+    this.#workflows = newestFirst(snapshot.workflows);
+    this.#actions = newestFirst(snapshot.actions);
+    this.#runs = newestFirst(snapshot.runs);
+    this.#forges = newestFirst(snapshot.forges);
+    this.#audit = newestFirst(snapshot.audit);
+    this.memory.load(newestFirst(snapshot.memory));
+  }
+
+  #emit(collection: StateCollection, id: string, workspaceId: string, record: unknown): void {
+    if (!this.#changeListeners.size) return;
+    const body = structuredClone(record);
+    for (const listener of this.#changeListeners) {
+      try {
+        listener({ collection, id, workspaceId, body });
+      } catch {
+        // A persistence listener must never break the request path.
+      }
+    }
+  }
+
+  #runWorkspace(run: AgentRun): string {
+    return (
+      this.workflowById(run.workflowId)?.workspaceId ??
+      this.eventById(run.eventId)?.workspaceId ??
+      FALLBACK_WORKSPACE
+    );
+  }
+
+  #actionWorkspace(action: ActionProposal): string {
+    return (
+      this.workflowById(action.workflowId)?.workspaceId ??
+      this.eventById(action.eventId)?.workspaceId ??
+      FALLBACK_WORKSPACE
+    );
+  }
 
   appendEvent(event: EventEnvelope): { created: boolean; event: EventEnvelope } {
     if (this.#dedupe.has(event.dedupeKey))
@@ -34,6 +121,7 @@ export class EventForgeStore {
       };
     this.#dedupe.add(event.dedupeKey);
     this.#events.unshift(event);
+    this.#emit("events", event.id, event.workspaceId, event);
     this.audit(
       event.workspaceId,
       "event_received",
@@ -53,8 +141,22 @@ export class EventForgeStore {
       ? this.#workflows.filter((workflow) => workflow.workspaceId === workspaceId)
       : [...this.#workflows];
   }
+  /** Adds a workflow, or replaces the stored one with the same id in place. */
   addWorkflow(workflow: WorkflowDefinition): WorkflowDefinition {
-    this.#workflows.unshift(workflow);
+    const index = this.#workflows.findIndex((item) => item.id === workflow.id);
+    if (index >= 0) this.#workflows[index] = workflow;
+    else this.#workflows.unshift(workflow);
+    this.#emit("workflows", workflow.id, workflow.workspaceId, workflow);
+    return workflow;
+  }
+  updateWorkflowPolicy(
+    id: string,
+    policy: WorkflowDefinition["policy"],
+  ): WorkflowDefinition | undefined {
+    const workflow = this.workflowById(id);
+    if (!workflow) return undefined;
+    workflow.policy = policy;
+    this.#emit("workflows", workflow.id, workflow.workspaceId, workflow);
     return workflow;
   }
   actions(workspaceId?: string): ActionProposal[] {
@@ -85,6 +187,7 @@ export class EventForgeStore {
   }
   addAction(action: ActionProposal): ActionProposal {
     this.#actions.unshift(action);
+    this.#emit("actions", action.id, this.#actionWorkspace(action), action);
     return action;
   }
   actionById(id: string): ActionProposal | undefined {
@@ -92,14 +195,19 @@ export class EventForgeStore {
   }
   addRun(run: AgentRun): AgentRun {
     this.#runs.unshift(run);
+    this.#emit("runs", run.id, this.#runWorkspace(run), run);
     return run;
   }
   updateRun(id: string, patch: Partial<AgentRun>): AgentRun | undefined {
     const item = this.#runs.find((run) => run.id === id);
-    return item && Object.assign(item, patch);
+    if (!item) return undefined;
+    Object.assign(item, patch);
+    this.#emit("runs", item.id, this.#runWorkspace(item), item);
+    return item;
   }
   addForge(job: ForgeJob): ForgeJob {
     this.#forges.unshift(job);
+    this.#emit("forges", job.id, job.workspaceId, job);
     return job;
   }
   forgeById(id: string): ForgeJob | undefined {
@@ -131,6 +239,7 @@ export class EventForgeStore {
     if (action.expiresAt && Date.parse(action.expiresAt) <= now.getTime()) {
       action.status = "expired";
       action.version += 1;
+      this.#emit("actions", action.id, this.#actionWorkspace(action), action);
       return { value: action, error: "expired", message: "Action approval has expired." };
     }
     action.status = input.approved ? "approved" : "rejected";
@@ -138,6 +247,7 @@ export class EventForgeStore {
     action.decisionReason = input.reason;
     action.decidedAt = now.toISOString();
     action.version += 1;
+    this.#emit("actions", action.id, this.#actionWorkspace(action), action);
     const workflow = this.workflowById(action.workflowId);
     if (workflow)
       this.audit(
@@ -154,6 +264,7 @@ export class EventForgeStore {
     if (!job || job.status !== "validated") return job;
     job.status = approved ? "approved" : "rejected";
     job.approvedBy = reviewer;
+    this.#emit("forges", job.id, job.workspaceId, job);
     this.audit(
       job.workspaceId,
       "forge",
@@ -178,6 +289,7 @@ export class EventForgeStore {
       createdAt: new Date().toISOString(),
     };
     this.#audit.unshift(entry);
+    this.#emit("audit", entry.id, entry.workspaceId, entry);
     for (const listener of this.#auditListeners) void listener(entry);
     return entry;
   }

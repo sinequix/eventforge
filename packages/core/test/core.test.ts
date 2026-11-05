@@ -1177,3 +1177,87 @@ function workspaceWorkflowFixture() {
     },
   };
 }
+
+describe("EventForgeStore change feed", () => {
+  it("emits a copy of every mutation and hydrates back to the same state", async () => {
+    const { EventForgeStore: Store } = await import("../src/store.js");
+    const store = new Store();
+    const changes: Array<{ collection: string; id: string; workspaceId: string; body: unknown }> =
+      [];
+    store.subscribeChanges((change) => changes.push(change));
+    store.subscribeChanges(() => {
+      throw new Error("listener failures never break the store");
+    });
+    const event = normalizeEvent({
+      provider: "github",
+      workspaceId: "w",
+      projectId: "p",
+      payload: { check_run: { conclusion: "failure" } },
+      signatureStatus: "verified",
+      deliveryId: "d1",
+      topicHint: "check_run",
+    });
+    store.appendEvent(event);
+    const workflowId = "00000000-0000-4000-8000-000000000001";
+    store.addWorkflow({
+      id: workflowId,
+      workspaceId: "w",
+      projectId: "p",
+      name: "wf",
+      enabled: true,
+      trigger: { provider: "github", topic: "check_run" },
+      filters: {},
+      agentProfile: "a",
+      memoryScope: "project",
+      policy: {
+        version: 1,
+        approvalMode: "approval_required",
+        allowedCapabilities: ["read"],
+        allowedRepositories: [],
+        allowedPaths: [],
+        allowedDomains: [],
+        allowedProviders: ["github"],
+      },
+    });
+    store.addRun({
+      id: "run-1",
+      workflowId,
+      eventId: event.id,
+      status: "running",
+      memoryIds: [],
+      startedAt: "t",
+    });
+    store.updateRun("run-1", { status: "completed" });
+    store.memory.remember({ workspaceId: "w", projectId: "p", text: "note", tags: [] });
+    expect(changes.map((c) => c.collection)).toEqual([
+      "events",
+      "audit",
+      "workflows",
+      "runs",
+      "runs",
+      "memory",
+    ]);
+    expect(changes[3]!.body).toMatchObject({ status: "running" });
+    expect(changes.every((c) => c.workspaceId === "w")).toBe(true);
+
+    const latest = new Map<string, unknown>();
+    for (const c of changes) latest.set(`${c.collection}:${c.id}`, c.body);
+    const pick = (collection: string) =>
+      [...latest.entries()]
+        .filter(([key]) => key.startsWith(`${collection}:`))
+        .map(([, body]) => body);
+    const restored = new Store();
+    restored.hydrate({
+      events: pick("events") as never,
+      workflows: pick("workflows") as never,
+      runs: pick("runs") as never,
+      audit: pick("audit") as never,
+      memory: pick("memory") as never,
+    });
+    expect(restored.events()).toEqual(store.events());
+    expect(restored.runs()).toEqual(store.runs());
+    expect(restored.appendEvent({ ...event, id: "other" }).created).toBe(false);
+    expect(restored.memory.query("w", "p", "note")).toHaveLength(1);
+    expect(restored.updateWorkflowPolicy("missing", store.workflows()[0]!.policy)).toBeUndefined();
+  });
+});

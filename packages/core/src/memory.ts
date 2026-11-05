@@ -11,6 +11,22 @@ export type MemoryRecord = {
 
 export class ScopedMemory {
   #records: MemoryRecord[] = [];
+  #listeners = new Set<(record: MemoryRecord) => void>();
+
+  /** Notified after every new record; used by durable state sinks. */
+  subscribe(listener: (record: MemoryRecord) => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  /** Replace all records with persisted ones (newest first). Does not notify listeners. */
+  load(records: MemoryRecord[]): void {
+    this.#records = [...records];
+  }
+
+  records(): MemoryRecord[] {
+    return [...this.#records];
+  }
 
   remember(input: Omit<MemoryRecord, "id" | "createdAt">): MemoryRecord {
     const record: MemoryRecord = {
@@ -19,6 +35,7 @@ export class ScopedMemory {
       createdAt: new Date().toISOString(),
     };
     this.#records.unshift(record);
+    for (const listener of this.#listeners) listener(record);
     return record;
   }
 
