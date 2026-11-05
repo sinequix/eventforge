@@ -639,6 +639,14 @@ describe("event security", () => {
     });
     expect(isGitHubCiFailure(ci)).toBe(true);
     expect(isGitHubCiFailure({ ...ci, provider: "linear" })).toBe(false);
+    const workflowRun = (conclusion: string, action = "completed") => ({
+      ...ci,
+      topic: "workflow_run",
+      payload: { action, workflow_run: { conclusion } },
+    });
+    expect(isGitHubCiFailure(workflowRun("failure"))).toBe(true);
+    expect(isGitHubCiFailure(workflowRun("success"))).toBe(false);
+    expect(isGitHubCiFailure(workflowRun("failure", "requested"))).toBe(false);
     expect(
       isGitHubIssueOpened({ ...ci, topic: "issues", payload: { action: "opened", issue: {} } }),
     ).toBe(true);

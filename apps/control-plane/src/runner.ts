@@ -47,7 +47,7 @@ export class DemoAgentRunner implements AgentRunner {
         ? `${workflow.agentProfile} opened a new read-only Codex review thread for issue #${issue.number ?? "unknown"}: ${String(issue.title ?? "Untitled issue")} in ${repository}.${context} No GitHub write has been performed.`
         : pullRequest
           ? `${workflow.agentProfile} opened a read-only Codex review thread for PR #${pullRequest.number ?? "unknown"}: ${String(pullRequest.title ?? "Untitled pull request")} in ${repository}.${context} No GitHub write has been performed.`
-          : `${workflow.agentProfile} analyzed untrusted ${event.provider}:${event.topic} evidence for ${repository}.${context} A remediation is ready for approval; no write has been performed.`,
+          : `${workflow.agentProfile} analyzed untrusted ${event.provider}:${event.topic} evidence for ${repository}.${context} Proposed next step: reproduce the failure and add a focused regression test.`,
     };
   }
 }

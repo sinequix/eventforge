@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import cors from "@fastify/cors";
 import rawBody from "fastify-raw-body";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -36,11 +36,67 @@ import {
 import type { RelayController } from "./local-relay.js";
 import type { TunnelProvisioner } from "./managed-tunnel.js";
 import { GitHubInstallationRegistry, type GitHubInstallation } from "./github-app.js";
+import { createNotifierFromEnv, type NotificationStatus, type WebhookNotifier } from "./notify.js";
 
 const DEFAULT_WORKSPACE = "demo-workspace";
 const DEFAULT_PROJECT = "eventforge-demo-service";
 const LOCAL_CONSOLE_ORIGIN = "http://localhost:5173";
 const RECENT_MFA_WINDOW_MS = 15 * 60 * 1000;
+const DEMO_REPOSITORY = "eventforge/demo-service";
+const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+export const PROPOSAL_PENDING_NOTE =
+  "A remediation proposal is waiting for approval; no write has been performed.";
+
+/**
+ * Repositories the built-in GitHub workflows may propose writes for. Explicit
+ * EVENTFORGE_ALLOWED_REPOS (comma separated) wins; otherwise the configured
+ * EVENTFORGE_GITHUB_REPOSITORY; otherwise the bundled demo repository. The demo
+ * repository stays allowed while demo mode is on so `/events/demo` keeps working.
+ */
+export function configuredAllowedRepositories(environment = process.env): string[] {
+  const explicit = (environment.EVENTFORGE_ALLOWED_REPOS ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const invalid = explicit.filter((item) => !REPOSITORY_PATTERN.test(item));
+  if (invalid.length)
+    throw new Error("EVENTFORGE_ALLOWED_REPOS must list OWNER/REPOSITORY entries.");
+  const configured = environment.EVENTFORGE_GITHUB_REPOSITORY?.trim();
+  const base = explicit.length
+    ? explicit
+    : configured && REPOSITORY_PATTERN.test(configured)
+      ? [configured]
+      : [DEMO_REPOSITORY];
+  const demo = environment.EVENTFORGE_DEMO_MODE === "true" || environment.NODE_ENV === "test";
+  return [...new Set(demo ? [...base, DEMO_REPOSITORY] : base)];
+}
+
+/** Optional workflow-name filter for GitHub Actions `workflow_run` failures. */
+export function configuredCiWorkflowNames(environment = process.env): string[] {
+  return (environment.EVENTFORGE_CI_WORKFLOWS ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function bearerMatches(header: unknown, token: string): boolean {
+  if (typeof header !== "string" || !header.startsWith("Bearer ")) return false;
+  const supplied = Buffer.from(header.slice("Bearer ".length));
+  const expected = Buffer.from(token);
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+
+function eventLink(event: EventEnvelope): string | null {
+  const payload = event.payload;
+  for (const key of ["workflow_run", "check_run", "pull_request", "issue"]) {
+    const value = payload[key];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const url = (value as Record<string, unknown>).html_url;
+      if (typeof url === "string" && url.startsWith("https://")) return url;
+    }
+  }
+  return null;
+}
 
 type IntegrationBinding = {
   provider: Exclude<Provider, "custom">;
@@ -58,6 +114,8 @@ export type AppOptions = {
   relayController?: RelayController;
   tunnelProvisioner?: TunnelProvisioner;
   githubInstallations?: GitHubInstallationRegistry;
+  /** Outbound signed run notifications. Defaults to EVENTFORGE_NOTIFY_URL/SECRET when unset. */
+  notifier?: WebhookNotifier | null;
 };
 
 declare module "fastify" {
@@ -103,7 +161,9 @@ function isPublicRelayPath(url: string): boolean {
   return pathname === "/health" || /^\/webhooks\/(github|linear|sentry)$/.test(pathname);
 }
 
-export function createDefaultWorkflow(): WorkflowDefinition {
+export function createDefaultWorkflow(
+  allowedRepositories: string[] = configuredAllowedRepositories(),
+): WorkflowDefinition {
   return {
     id: randomUUID(),
     workspaceId: DEFAULT_WORKSPACE,
@@ -118,7 +178,7 @@ export function createDefaultWorkflow(): WorkflowDefinition {
       version: 1,
       approvalMode: "approval_required",
       allowedCapabilities: ["read", "write_files", "git_commit", "provider_write"],
-      allowedRepositories: ["eventforge/demo-service"],
+      allowedRepositories,
       allowedPaths: ["src/**", "test/**"],
       allowedDomains: ["api.github.com"],
       allowedProviders: ["github"],
@@ -126,8 +186,27 @@ export function createDefaultWorkflow(): WorkflowDefinition {
   };
 }
 
+export function createWorkflowRunFailureWorkflow(
+  allowedRepositories: string[] = configuredAllowedRepositories(),
+  workflowNames: string[] = configuredCiWorkflowNames(),
+): WorkflowDefinition {
+  const base = createDefaultWorkflow(allowedRepositories);
+  return {
+    ...base,
+    id: randomUUID(),
+    name: "Investigate GitHub Actions workflow failures",
+    trigger: { provider: "github", topic: "workflow_run" },
+    filters: {
+      action: "completed",
+      "workflow_run.conclusion": "failure",
+      ...(workflowNames.length ? { "workflow_run.name": workflowNames } : {}),
+    },
+  };
+}
+
 function createIssueReviewWorkflow(
-  topic: "issues" | "issue_comment" = "issues",
+  topic: "issues" | "issue_comment",
+  allowedRepositories: string[],
 ): WorkflowDefinition {
   return {
     id: randomUUID(),
@@ -143,7 +222,7 @@ function createIssueReviewWorkflow(
       version: 1,
       approvalMode: "approval_required",
       allowedCapabilities: ["read"],
-      allowedRepositories: ["sinequix/eventforge"],
+      allowedRepositories,
       allowedPaths: ["**"],
       allowedDomains: [],
       allowedProviders: ["github"],
@@ -151,7 +230,7 @@ function createIssueReviewWorkflow(
   };
 }
 
-function createPullRequestReviewWorkflow(): WorkflowDefinition {
+function createPullRequestReviewWorkflow(allowedRepositories: string[]): WorkflowDefinition {
   return {
     id: randomUUID(),
     workspaceId: DEFAULT_WORKSPACE,
@@ -166,7 +245,7 @@ function createPullRequestReviewWorkflow(): WorkflowDefinition {
       version: 1,
       approvalMode: "approval_required",
       allowedCapabilities: ["read"],
-      allowedRepositories: ["sinequix/eventforge"],
+      allowedRepositories,
       allowedPaths: ["**"],
       allowedDomains: [],
       allowedProviders: ["github"],
@@ -219,10 +298,15 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   const authContexts = new WeakMap<object, AuthContext>();
   const idempotentDecisions = new Map<string, ActionProposal>();
   const allowedOrigins = configuredBrowserOrigins();
-  store.addWorkflow(createDefaultWorkflow());
-  store.addWorkflow(createIssueReviewWorkflow());
-  store.addWorkflow(createIssueReviewWorkflow("issue_comment"));
-  store.addWorkflow(createPullRequestReviewWorkflow());
+  const allowedRepositories = configuredAllowedRepositories();
+  const apiToken = runtime.mode === "remote" ? undefined : process.env.EVENTFORGE_API_TOKEN;
+  const notifier =
+    options.notifier === undefined ? createNotifierFromEnv(process.env, app.log) : options.notifier;
+  store.addWorkflow(createDefaultWorkflow(allowedRepositories));
+  store.addWorkflow(createWorkflowRunFailureWorkflow(allowedRepositories));
+  store.addWorkflow(createIssueReviewWorkflow("issues", allowedRepositories));
+  store.addWorkflow(createIssueReviewWorkflow("issue_comment", allowedRepositories));
+  store.addWorkflow(createPullRequestReviewWorkflow(allowedRepositories));
 
   await app.register(cors, {
     origin: (origin, callback) =>
@@ -238,7 +322,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
         auditSink
           .append(entry)
           .catch((error: unknown) =>
-            app.log.error({ error, auditId: entry.id }, "audit persistence failed"),
+            app.log.error({ err: error, auditId: entry.id }, "audit persistence failed"),
           ),
       )
     : undefined;
@@ -262,6 +346,13 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
         .status(429)
         .send({ error: "Request rate limit exceeded." });
     }
+  });
+  app.addHook("onRequest", async (request, reply) => {
+    // Optional local bearer token: protects the plane from other local users and processes.
+    // Provider webhooks authenticate with their own HMAC signatures instead.
+    if (!apiToken || isPublicRelayPath(request.url) || request.method === "OPTIONS") return;
+    if (!bearerMatches(request.headers.authorization, apiToken))
+      return reply.status(401).send({ error: "EventForge API token required." });
   });
   app.addHook("onRequest", async (request, reply) => {
     if (
@@ -308,6 +399,40 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   function ownsWorkspace(request: object, workspaceId: string): boolean {
     return runtime.mode !== "remote" || authFor(request).workspaceId === workspaceId;
+  }
+
+  function notifyRun(runId: string, status: NotificationStatus): void {
+    if (!notifier) return;
+    try {
+      const run = store.runs().find((candidate) => candidate.id === runId);
+      if (!run) return;
+      const event = store.eventById(run.eventId);
+      if (!event) return;
+      const proposal = run.actionProposalId ? store.actionById(run.actionProposalId) : undefined;
+      notifier.notify({
+        event: {
+          id: event.id,
+          provider: event.provider,
+          topic: event.topic,
+          deliveryId: event.providerDeliveryId,
+          signatureStatus: event.signatureStatus,
+        },
+        run: {
+          id: run.id,
+          workflowId: run.workflowId,
+          status: run.status,
+          summary: run.summary,
+        },
+        proposal: proposal
+          ? { id: proposal.id, title: proposal.title, status: proposal.status, type: proposal.type }
+          : null,
+        repo: event.repository ?? null,
+        status,
+        link: eventLink(event),
+      });
+    } catch (error) {
+      app.log.warn({ err: error, runId }, "run notification could not be queued");
+    }
   }
 
   async function runWorkflow(workflow: WorkflowDefinition, event: EventEnvelope): Promise<void> {
@@ -460,7 +585,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       store.addAction(proposal);
       store.updateRun(run.id, {
         threadId: result.threadId,
-        summary: result.summary,
+        summary: `${result.summary} ${PROPOSAL_PENDING_NOTE}`,
         structuredResult: result.structured,
         actionProposalId: proposal.id,
         status: "waiting_for_approval",
@@ -479,6 +604,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
         finishedAt: new Date().toISOString(),
       });
       store.audit(event.workspaceId, "agent_run", run.id, "Agent investigation failed.");
+    } finally {
+      const finalStatus = store.runs().find((candidate) => candidate.id === run.id)?.status;
+      if (
+        finalStatus === "completed" ||
+        finalStatus === "waiting_for_approval" ||
+        finalStatus === "failed"
+      )
+        notifyRun(run.id, finalStatus);
     }
   }
 
@@ -515,7 +648,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       await execution;
     } else {
       void execution.catch((error: unknown) =>
-        app.log.error({ error, eventId: event.id }, "background workflow execution failed"),
+        app.log.error({ err: error, eventId: event.id }, "background workflow execution failed"),
       );
     }
     return {
@@ -752,7 +885,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
             ? githubRepository
             : binding?.repository
           : provider.data === "github"
-            ? process.env.EVENTFORGE_GITHUB_REPOSITORY
+            ? // The HMAC-verified payload names the repository the event is about; the
+              // workflow policy allowlist then decides whether a write may be proposed.
+              githubRepository
             : undefined,
       awaitWorkflows: false,
     });
@@ -896,15 +1031,19 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return reply.status(409).send({ error: decided.message, action: decided.value });
     const linkedRun = store.runs().find((run) => run.actionProposalId === actionId);
     if (linkedRun && decided.value) {
-      const outcome =
-        decided.value.status === "approved"
-          ? "Proposal approved; execution remains pending a dedicated policy-controlled worker."
-          : "Proposal rejected; no write was performed.";
+      const approved = decided.value.status === "approved";
+      const outcome = approved
+        ? "Proposal approved; execution remains pending a dedicated policy-controlled worker."
+        : "Proposal rejected; no write was performed.";
+      const analysis = (linkedRun.summary ?? "Agent analysis completed.")
+        .replace(PROPOSAL_PENDING_NOTE, "")
+        .trim();
       store.updateRun(linkedRun.id, {
         status: "completed",
-        summary: `${linkedRun.summary ?? "Agent analysis completed."} ${outcome}`,
+        summary: `${analysis} ${outcome}`,
         finishedAt: new Date().toISOString(),
       });
+      notifyRun(linkedRun.id, approved ? "approved" : "rejected");
     }
     if (idempotencyScope && decided.value) idempotentDecisions.set(idempotencyScope, decided.value);
     return decided.value;
@@ -966,7 +1105,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     try {
       return await options.relayController.ensure(parsed.data.provider);
     } catch (error) {
-      request.log.error({ error }, "local relay startup failed");
+      request.log.error({ err: error }, "local relay startup failed");
       return reply.status(502).send({ error: "Local relay failed to start." });
     }
   });
@@ -994,7 +1133,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       );
       return reply.header("cache-control", "no-store").status(201).send(lease);
     } catch (error) {
-      request.log.error({ error }, "managed tunnel provisioning failed");
+      request.log.error({ err: error }, "managed tunnel provisioning failed");
       return reply.status(502).send({ error: "Managed tunnel provisioning failed." });
     }
   });

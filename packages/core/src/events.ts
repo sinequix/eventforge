@@ -264,7 +264,13 @@ export function isGitHubCiFailure(event: EventEnvelope): boolean {
   if (event.provider !== "github") return false;
   const payload = event.payload;
   const checkRun = payload.check_run as Record<string, unknown> | undefined;
-  return event.topic === "check_run" && checkRun?.conclusion === "failure";
+  if (event.topic === "check_run") return checkRun?.conclusion === "failure";
+  const workflowRun = payload.workflow_run as Record<string, unknown> | undefined;
+  return (
+    event.topic === "workflow_run" &&
+    payload.action === "completed" &&
+    workflowRun?.conclusion === "failure"
+  );
 }
 
 export function isGitHubIssueOpened(event: EventEnvelope): boolean {

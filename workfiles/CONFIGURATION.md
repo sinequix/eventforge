@@ -308,15 +308,19 @@ Provider secrets are only needed for live provider traffic. Demo events do not
 need them. For GitHub relay development, `gh` must be authenticated and
 `cloudflared` must be installed.
 
-| Variable                                                                      | Meaning                                                      |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `GITHUB_WEBHOOK_SECRET`                                                       | GitHub signature verification secret                         |
-| `LINEAR_WEBHOOK_SECRET`                                                       | Linear signature verification secret                         |
-| `SENTRY_WEBHOOK_SECRET`                                                       | Sentry signature verification secret                         |
-| `EVENTFORGE_GITHUB_REPOSITORY`                                                | Explicit `OWNER/REPOSITORY` when auto-detection is ambiguous |
-| `EVENTFORGE_CLOUDFLARED_BIN`                                                  | Cloudflared executable path                                  |
-| `EVENTFORGE_CLOUDFLARED_TUNNEL` / `EVENTFORGE_CLOUDFLARED_PUBLIC_URL`         | Pair for a pre-created named tunnel                          |
-| `EVENTFORGE_TUNNEL_PROVISIONING_URL` / `EVENTFORGE_TUNNEL_PROVISIONING_TOKEN` | Pair for authenticated hosted tunnel provisioning            |
+| Variable                                                                      | Meaning                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GITHUB_WEBHOOK_SECRET`                                                       | GitHub signature verification secret                                                                                                                                                                                              |
+| `LINEAR_WEBHOOK_SECRET`                                                       | Linear signature verification secret                                                                                                                                                                                              |
+| `SENTRY_WEBHOOK_SECRET`                                                       | Sentry signature verification secret                                                                                                                                                                                              |
+| `EVENTFORGE_GITHUB_REPOSITORY`                                                | Explicit `OWNER/REPOSITORY` when auto-detection is ambiguous                                                                                                                                                                      |
+| `EVENTFORGE_ALLOWED_REPOS`                                                    | Comma-separated `OWNER/REPOSITORY` list the built-in GitHub workflows may propose writes for. Defaults to `EVENTFORGE_GITHUB_REPOSITORY`, then the demo repository. Evaluated against the repository in the HMAC-verified payload |
+| `EVENTFORGE_CI_WORKFLOWS`                                                     | Optional comma-separated GitHub Actions workflow names; when set, only failed `workflow_run` deliveries for these names start an investigation                                                                                    |
+| `EVENTFORGE_API_TOKEN`                                                        | Optional local bearer token. When set, every route except `/health` and `/webhooks/*` requires `Authorization: Bearer <token>` (the Hermes plugin sends it from its secret store)                                                 |
+| `EVENTFORGE_NOTIFY_URL` / `EVENTFORGE_NOTIFY_SECRET`                          | Pair for the signed outbound run notification sink, see `NOTIFICATION_SINKS.md`                                                                                                                                                   |
+| `EVENTFORGE_CLOUDFLARED_BIN`                                                  | Cloudflared executable path                                                                                                                                                                                                       |
+| `EVENTFORGE_CLOUDFLARED_TUNNEL` / `EVENTFORGE_CLOUDFLARED_PUBLIC_URL`         | Pair for a pre-created named tunnel                                                                                                                                                                                               |
+| `EVENTFORGE_TUNNEL_PROVISIONING_URL` / `EVENTFORGE_TUNNEL_PROVISIONING_TOKEN` | Pair for authenticated hosted tunnel provisioning                                                                                                                                                                                 |
 
 Cloudflare account credentials (`CLOUDFLARE_ACCOUNT_ID`,
 `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_API_TOKEN`, and

@@ -72,7 +72,7 @@ describe("agent runners", () => {
       topicHint: "issue",
     });
     expect((await runner.investigate({ event: alert, workflow, memories: [] })).summary).toContain(
-      "remediation is ready for approval",
+      "Proposed next step: reproduce the failure",
     );
     const unknownIssue = normalizeEvent({
       provider: "github",
