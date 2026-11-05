@@ -200,6 +200,7 @@ class ToolProxyTest(unittest.TestCase):
         fake = FakeClient(routes={("GET", "/events"): events})
         out = json.loads(tools.list_events(make_plane(fake), {}))
         self.assertEqual(out[0]["payload"], {"ok": 1})
+        self.assertTrue(out[0]["trusted"])
         for item in out[1:]:
             self.assertNotIn("payload", item)
             self.assertTrue(item["payloadWithheld"])

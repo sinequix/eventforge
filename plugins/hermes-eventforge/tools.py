@@ -205,8 +205,10 @@ def list_events(plane: Plane, args: dict[str, Any]) -> str:
 
 
 def redact_event(event: Any, include_unverified_payload: bool = False) -> Any:
-    if not isinstance(event, dict) or event.get("signatureStatus") == "verified":
+    if not isinstance(event, dict):
         return event
+    if event.get("signatureStatus") == "verified":
+        return {**event, "trusted": True}
     shown = {key: value for key, value in event.items() if key != "payload"}
     shown["trusted"] = False
     if include_unverified_payload:

@@ -149,7 +149,7 @@ def _optional(plane: Plane, path: str) -> Any:
 
     try:
         return plane.client.request("GET", path)
-    except ControlPlaneError:
+    except Exception:
         return []
 
 
