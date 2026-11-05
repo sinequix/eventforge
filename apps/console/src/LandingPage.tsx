@@ -44,7 +44,7 @@ const howItWorks = [
   },
   {
     marker: "02",
-    text: "EventForge verifies the signature. Events that fail verification are kept out of the model's context.",
+    text: "EventForge checks the signature. Forged events are rejected, unsigned ones are flagged, and only verified events get injected into your agent's context.",
     icon: Fingerprint,
   },
   {
