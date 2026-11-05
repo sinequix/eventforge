@@ -195,9 +195,11 @@ def event_digest(payload: Any, limit: int) -> str:
             continue
         digest[path] = value if not isinstance(value, str) else value[:limit]
     text = json.dumps(digest if digest else payload, default=str, ensure_ascii=False)
-    if len(text) <= limit:
-        return text
-    return text[:limit] + "..."
+    if len(text) > limit:
+        text = text[:limit] + "..."
+    # Escape angle brackets (still valid JSON) so provider text cannot close the
+    # <untrusted-event-data> wrapper and pose as trusted instructions.
+    return text.replace("<", "\\u003c").replace(">", "\\u003e")
 
 
 def _rule_key(tool_name: str, args: dict[str, Any]) -> str:
