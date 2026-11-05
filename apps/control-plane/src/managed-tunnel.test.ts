@@ -155,8 +155,61 @@ describe("managed Cloudflare tunnel provisioning", () => {
 
   it("fails loudly when only part of the server-side Cloudflare config exists", () => {
     expect(createTunnelProvisionerFromEnv({})).toBeUndefined();
-    expect(() => createTunnelProvisionerFromEnv({ CLOUDFLARE_ACCOUNT_ID: "account-1" })).toThrow(
-      "CLOUDFLARE_ZONE_ID",
-    );
+    const warnings: string[] = [];
+    expect(
+      createTunnelProvisionerFromEnv({ CLOUDFLARE_ACCOUNT_ID: "account-1" }, (m) =>
+        warnings.push(m),
+      ),
+    ).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("degrades to no provisioning when only a stray Cloudflare API token is set", () => {
+    const warnings: string[] = [];
+    const secret = "wrangler-token-value-that-must-not-leak";
+    expect(
+      createTunnelProvisionerFromEnv({ CLOUDFLARE_API_TOKEN: secret }, (m) => warnings.push(m)),
+    ).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("disabled");
+    expect(warnings[0]).toContain("EVENTFORGE_TUNNEL_NAMING_KEY");
+    expect(warnings[0]).not.toContain(secret);
+  });
+
+  it("degrades when all Cloudflare variables are set but the EventForge naming key is not", () => {
+    const warnings: string[] = [];
+    expect(
+      createTunnelProvisionerFromEnv(
+        { CLOUDFLARE_ACCOUNT_ID: "a", CLOUDFLARE_ZONE_ID: "z", CLOUDFLARE_API_TOKEN: "t" },
+        (m) => warnings.push(m),
+      ),
+    ).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("throws when an EventForge tunnel variable shows intent but required ones are missing", () => {
+    const warn = () => {
+      throw new Error("must not warn");
+    };
+    expect(() =>
+      createTunnelProvisionerFromEnv({ EVENTFORGE_TUNNEL_NAMING_KEY: "k" }, warn),
+    ).toThrow("CLOUDFLARE_ZONE_ID");
+    expect(() =>
+      createTunnelProvisionerFromEnv(
+        { EVENTFORGE_TUNNEL_BASE_DOMAIN: "tunnels.example.com", CLOUDFLARE_API_TOKEN: "t" },
+        warn,
+      ),
+    ).toThrow("EVENTFORGE_TUNNEL_NAMING_KEY");
+  });
+
+  it("builds a provisioner when every variable is set", () => {
+    expect(
+      createTunnelProvisionerFromEnv({
+        CLOUDFLARE_ACCOUNT_ID: "a",
+        CLOUDFLARE_ZONE_ID: "z",
+        CLOUDFLARE_API_TOKEN: "t",
+        EVENTFORGE_TUNNEL_NAMING_KEY: "k",
+      }),
+    ).toBeDefined();
   });
 });

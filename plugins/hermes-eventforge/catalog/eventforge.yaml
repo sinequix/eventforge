@@ -22,6 +22,7 @@ capabilities:
     - ef_forge_mcp
     - ef_approve_forge
     - ef_list_events
+    - ef_list_pending_actions
     - ef_list_workflows
   provides_hooks:
     - pre_llm_call

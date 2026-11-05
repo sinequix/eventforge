@@ -19,6 +19,7 @@ provides_tools:
   - ef_forge_mcp
   - ef_approve_forge
   - ef_list_events
+  - ef_list_pending_actions
   - ef_list_workflows
 provides_hooks:
   - pre_llm_call
@@ -47,6 +48,10 @@ config_schema:
     type: bool
     default: false
     description: When true, an interactive session may start the repository's eventforge-standalone.cjs bundle with node if /health is down. Cron and the messaging gateway never do this.
+  context_payload_chars:
+    type: int
+    default: 1200
+    description: Per-event character budget for verified event data that pre_llm_call adds to the prompt (CI title and summary first). Clamped to 200..4000. Unverified and demo events are never added.
   request_timeout_seconds:
     type: int
     default: 10

@@ -61,7 +61,8 @@ export const PROPOSAL_PENDING_NOTE =
 /**
  * Repositories the built-in GitHub workflows may propose writes for. Explicit
  * EVENTFORGE_ALLOWED_REPOS (comma separated) wins; otherwise the configured
- * EVENTFORGE_GITHUB_REPOSITORY; otherwise the bundled demo repository. The demo
+ * EVENTFORGE_GITHUB_REPOSITORY; otherwise GITHUB_REPOSITORY (set by GitHub
+ * Actions and similar runners); otherwise the bundled demo repository. The demo
  * repository stays allowed while demo mode is on so `/events/demo` keeps working.
  */
 export function configuredAllowedRepositories(environment = process.env): string[] {
@@ -72,7 +73,9 @@ export function configuredAllowedRepositories(environment = process.env): string
   const invalid = explicit.filter((item) => !REPOSITORY_PATTERN.test(item));
   if (invalid.length)
     throw new Error("EVENTFORGE_ALLOWED_REPOS must list OWNER/REPOSITORY entries.");
-  const configured = environment.EVENTFORGE_GITHUB_REPOSITORY?.trim();
+  const configured = [environment.EVENTFORGE_GITHUB_REPOSITORY, environment.GITHUB_REPOSITORY]
+    .map((item) => item?.trim())
+    .find((item) => item && REPOSITORY_PATTERN.test(item));
   const base = explicit.length
     ? explicit
     : configured && REPOSITORY_PATTERN.test(configured)
@@ -457,7 +460,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       event.workspaceId,
       "workflow_matched",
       workflow.id,
-      `${workflow.name} matched ${event.provider}:${event.topic}.`,
+      `${workflow.name} matched ${event.provider}:${event.topic} event ${event.id}.`,
     );
     const run = store.addRun({
       id: randomUUID(),

@@ -8,7 +8,7 @@ EventForge for Hermes proxies the local EventForge control plane into Hermes Age
 
 Surfaces:
 
-- Tools: `ef_listen_for_webhook`, `ef_emit_event`, `ef_query_memory`, `ef_spawn_subagent`, `ef_approve_action`, `ef_forge_mcp`, `ef_approve_forge`, `ef_list_events`, `ef_list_workflows`.
+- Tools: `ef_listen_for_webhook`, `ef_emit_event`, `ef_query_memory`, `ef_spawn_subagent`, `ef_approve_action`, `ef_forge_mcp`, `ef_approve_forge`, `ef_list_events`, `ef_list_pending_actions`, `ef_list_workflows`.
 - Hooks: `pre_llm_call`, `pre_tool_call`, `post_tool_call`, `on_session_start`.
 - Slash command: `/eventforge status|events|replay <id>`.
 - Skill: `eventforge:triage`.

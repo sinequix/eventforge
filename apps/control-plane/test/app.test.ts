@@ -294,6 +294,24 @@ describe("control plane", () => {
     );
   });
 
+  it("names the event in workflow_matched audit entries so replay can correlate them", async () => {
+    const app = await createApp({ store: new EventForgeStore(), runner, persistAudit: false });
+    const response = await app.inject({
+      method: "POST",
+      url: "/events/demo",
+      payload: { provider: "github" },
+    });
+    expect(response.statusCode).toBe(202);
+    const event = (await app.inject({ method: "GET", url: "/events" })).json()[0];
+    const audit = (await app.inject({ method: "GET", url: "/audit" })).json() as Array<{
+      kind: string;
+      message: string;
+    }>;
+    const matched = audit.filter((entry) => entry.kind === "workflow_matched");
+    expect(matched.length).toBeGreaterThan(0);
+    for (const entry of matched) expect(entry.message).toContain(`event ${event.id}`);
+  });
+
   it("runs a GitHub demo event through a policy-gated proposal", async () => {
     const app = await createApp({ store: new EventForgeStore(), runner, persistAudit: false });
     const response = await app.inject({

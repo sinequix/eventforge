@@ -122,6 +122,18 @@ describe("repository allowlist configuration", () => {
     expect(
       configuredAllowedRepositories({ EVENTFORGE_GITHUB_REPOSITORY: "sinequix/eventforge" }),
     ).toEqual(["sinequix/eventforge"]);
+    expect(configuredAllowedRepositories({ GITHUB_REPOSITORY: "sinequix/eventforge" })).toEqual([
+      "sinequix/eventforge",
+    ]);
+    expect(
+      configuredAllowedRepositories({
+        EVENTFORGE_GITHUB_REPOSITORY: "owner/configured",
+        GITHUB_REPOSITORY: "owner/runner",
+      }),
+    ).toEqual(["owner/configured"]);
+    expect(configuredAllowedRepositories({ GITHUB_REPOSITORY: "not a repo" })).toEqual([
+      "eventforge/demo-service",
+    ]);
     expect(configuredAllowedRepositories({})).toEqual(["eventforge/demo-service"]);
     expect(
       configuredAllowedRepositories({
