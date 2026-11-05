@@ -45,17 +45,18 @@ Leave that process running. The bundle stops the embedded plane when its stdin c
 
 ## Tools
 
-| Tool                    | Control-plane route          | Notes                                          |
-| ----------------------- | ---------------------------- | ---------------------------------------------- |
-| `ef_listen_for_webhook` | `POST /relay/ensure`         | Refused in cron and the messaging gateway      |
-| `ef_emit_event`         | `POST /events`               | Unverified manual event                        |
-| `ef_query_memory`       | `GET /memory`                | Read-only                                      |
-| `ef_spawn_subagent`     | `POST /agent-runs`           | Hermes approval required                       |
-| `ef_approve_action`     | `POST /actions/:id/decision` | Hermes approval required                       |
-| `ef_forge_mcp`          | `POST /forge`                | Hermes approval required; creates a draft only |
-| `ef_approve_forge`      | `POST /forge/:id/decision`   | Hermes approval required                       |
-| `ef_list_events`        | `GET /events`                | Read-only                                      |
-| `ef_list_workflows`     | `GET /workflows`             | Read-only                                      |
+| Tool                      | Control-plane route          | Notes                                          |
+| ------------------------- | ---------------------------- | ---------------------------------------------- |
+| `ef_listen_for_webhook`   | `POST /relay/ensure`         | Refused in cron and the messaging gateway      |
+| `ef_emit_event`           | `POST /events`               | Unverified manual event                        |
+| `ef_query_memory`         | `GET /memory`                | Read-only                                      |
+| `ef_spawn_subagent`       | `POST /agent-runs`           | Hermes approval required                       |
+| `ef_approve_action`       | `POST /actions/:id/decision` | Hermes approval required                       |
+| `ef_forge_mcp`            | `POST /forge`                | Hermes approval required; creates a draft only |
+| `ef_approve_forge`        | `POST /forge/:id/decision`   | Hermes approval required                       |
+| `ef_list_events`          | `GET /events`                | Read-only; unverified payloads withheld        |
+| `ef_list_pending_actions` | `GET /actions`               | Read-only; pending proposals and their ids     |
+| `ef_list_workflows`       | `GET /workflows`             | Read-only                                      |
 
 `ef_approve_forge` is gated with the three tools named in the hackathon brief because it is the same kind of irreversible decision as `ef_approve_action`.
 

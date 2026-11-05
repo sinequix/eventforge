@@ -26,6 +26,7 @@ class Settings:
     timeout: float
     bundle_path: str
     fail_closed: bool
+    context_chars: int = 1200
 
 
 def load_settings(ctx: Any, *, fail_closed: bool | None = None) -> Settings:
@@ -40,6 +41,7 @@ def load_settings(ctx: Any, *, fail_closed: bool | None = None) -> Settings:
         timeout=timeout,
         bundle_path=_text(ctx.get_config("bundle_path", ""), ""),
         fail_closed=closed,
+        context_chars=context_chars(ctx.get_config("context_payload_chars", DEFAULT_CONTEXT_CHARS)),
     )
 
 
@@ -60,6 +62,21 @@ def read_api_token() -> str:
             "Set the plugin secret in Hermes. This plugin does not read credential files."
         ) from exc
     return str(value or "").strip()
+
+
+DEFAULT_CONTEXT_CHARS = 1200
+MIN_CONTEXT_CHARS = 200
+MAX_CONTEXT_CHARS = 4000
+
+
+def context_chars(raw: Any) -> int:
+    """Per-event budget for verified payload context. Clamped to 200..4000."""
+
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_CONTEXT_CHARS
+    return min(MAX_CONTEXT_CHARS, max(MIN_CONTEXT_CHARS, value))
 
 
 def _timeout(raw: Any, fail_closed: bool) -> float:

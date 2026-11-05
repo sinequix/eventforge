@@ -183,20 +183,51 @@ export class CloudflareManagedTunnelProvisioner implements TunnelProvisioner {
   }
 }
 
+const TUNNEL_ENV_NAMES = [
+  "CLOUDFLARE_ACCOUNT_ID",
+  "CLOUDFLARE_ZONE_ID",
+  "CLOUDFLARE_API_TOKEN",
+  "EVENTFORGE_TUNNEL_NAMING_KEY",
+] as const;
+
+/**
+ * Variables that only exist to configure EventForge managed tunnels. The
+ * CLOUDFLARE_* names are also used by Wrangler and other tools, so on their own
+ * they do not mean the operator asked for managed tunnels.
+ */
+const TUNNEL_INTENT_NAMES = [
+  "EVENTFORGE_TUNNEL_NAMING_KEY",
+  "EVENTFORGE_TUNNEL_BASE_DOMAIN",
+] as const;
+
+/**
+ * Build the managed tunnel provisioner from the environment.
+ *
+ * - Nothing set: provisioning is off.
+ * - Every required variable set: provisioning is on.
+ * - An EventForge tunnel variable set but a required one missing: the operator
+ *   clearly asked for managed tunnels, so this throws with the missing names.
+ * - Only generic CLOUDFLARE_* variables set (for example a Wrangler token):
+ *   provisioning stays off and `warn` is called once. Startup continues.
+ */
 export function createTunnelProvisionerFromEnv(
   environment: NodeJS.ProcessEnv = process.env,
+  warn: (message: string) => void = (message) => console.warn(message),
 ): TunnelProvisioner | undefined {
-  const names = [
-    "CLOUDFLARE_ACCOUNT_ID",
-    "CLOUDFLARE_ZONE_ID",
-    "CLOUDFLARE_API_TOKEN",
-    "EVENTFORGE_TUNNEL_NAMING_KEY",
-  ] as const;
-  const configured = names.filter((name) => environment[name]);
-  if (configured.length === 0) return undefined;
-  const missing = names.filter((name) => !environment[name]);
-  if (missing.length)
-    throw new Error(`Managed tunnel provisioning requires ${missing.join(", ")}.`);
+  const configured = TUNNEL_ENV_NAMES.filter((name) => environment[name]);
+  const intent = TUNNEL_INTENT_NAMES.some((name) => environment[name]);
+  if (configured.length === 0 && !intent) return undefined;
+  const missing = TUNNEL_ENV_NAMES.filter((name) => !environment[name]);
+  if (missing.length) {
+    if (intent) throw new Error(`Managed tunnel provisioning requires ${missing.join(", ")}.`);
+    warn(
+      `EventForge managed tunnel provisioning is disabled: ${configured.join(", ")} ` +
+        `${configured.length === 1 ? "is" : "are"} set but ${missing.join(", ")} ` +
+        `${missing.length === 1 ? "is" : "are"} not. Set EVENTFORGE_TUNNEL_NAMING_KEY and the ` +
+        "other variables to enable it.",
+    );
+    return undefined;
+  }
   return new CloudflareManagedTunnelProvisioner({
     accountId: environment.CLOUDFLARE_ACCOUNT_ID!,
     zoneId: environment.CLOUDFLARE_ZONE_ID!,
