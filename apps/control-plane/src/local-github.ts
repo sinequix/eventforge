@@ -16,6 +16,8 @@ const QUICK_TUNNEL_RETRY_DELAY_MS = 1_000;
 const TUNNEL_READY_TIMEOUT_MS = 30_000;
 const GITHUB_WEBHOOK_EVENTS = [
   "check_run",
+  "workflow_run",
+  "push",
   "issues",
   "pull_request",
   "pull_request_review",
