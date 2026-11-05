@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import cors from "@fastify/cors";
 import rawBody from "fastify-raw-body";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -37,6 +37,17 @@ import type { RelayController } from "./local-relay.js";
 import type { TunnelProvisioner } from "./managed-tunnel.js";
 import { GitHubInstallationRegistry, type GitHubInstallation } from "./github-app.js";
 import { createNotifierFromEnv, type NotificationStatus, type WebhookNotifier } from "./notify.js";
+import type { StateStoreStatus } from "./state-sync.js";
+
+/**
+ * Deterministic UUID for a built-in workflow so persisted runs and proposals keep
+ * pointing at the same workflow after a restart.
+ */
+export function builtinWorkflowId(workspaceId: string, key: string): string {
+  const hex = createHash("sha256").update(`eventforge-builtin:${workspaceId}:${key}`).digest("hex");
+  const variant = ((parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 
 const DEFAULT_WORKSPACE = "demo-workspace";
 const DEFAULT_PROJECT = "eventforge-demo-service";
@@ -116,6 +127,8 @@ export type AppOptions = {
   githubInstallations?: GitHubInstallationRegistry;
   /** Outbound signed run notifications. Defaults to EVENTFORGE_NOTIFY_URL/SECRET when unset. */
   notifier?: WebhookNotifier | null;
+  /** Durable store status for /health (EVENTFORGE_STORE=cloudflare). */
+  stateStatus?: () => StateStoreStatus;
 };
 
 declare module "fastify" {
@@ -302,11 +315,15 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   const apiToken = runtime.mode === "remote" ? undefined : process.env.EVENTFORGE_API_TOKEN;
   const notifier =
     options.notifier === undefined ? createNotifierFromEnv(process.env, app.log) : options.notifier;
-  store.addWorkflow(createDefaultWorkflow(allowedRepositories));
-  store.addWorkflow(createWorkflowRunFailureWorkflow(allowedRepositories));
-  store.addWorkflow(createIssueReviewWorkflow("issues", allowedRepositories));
-  store.addWorkflow(createIssueReviewWorkflow("issue_comment", allowedRepositories));
-  store.addWorkflow(createPullRequestReviewWorkflow(allowedRepositories));
+  // Built-ins are defined by configuration: stable ids, and the current config replaces
+  // any persisted copy on startup (policy edits to a built-in last until restart).
+  const builtin = (key: string, workflow: WorkflowDefinition) =>
+    store.addWorkflow({ ...workflow, id: builtinWorkflowId(workflow.workspaceId, key) });
+  builtin("ci-check-run", createDefaultWorkflow(allowedRepositories));
+  builtin("ci-workflow-run", createWorkflowRunFailureWorkflow(allowedRepositories));
+  builtin("issues", createIssueReviewWorkflow("issues", allowedRepositories));
+  builtin("issue-comments", createIssueReviewWorkflow("issue_comment", allowedRepositories));
+  builtin("pull-requests", createPullRequestReviewWorkflow(allowedRepositories));
 
   await app.register(cors, {
     origin: (origin, callback) =>
@@ -663,6 +680,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     service: "eventforge-control-plane",
     runtime: runtime.mode,
     runner: process.env.EVENTFORGE_RUNNER ?? "demo",
+    store: options.stateStatus?.() ?? { mode: "memory" },
   }));
   app.get("/events", async (request) =>
     store.events(scopedWorkspace(request, (request.query as { workspaceId?: string }).workspaceId)),
@@ -791,8 +809,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     if (runtime.mode === "remote" && authFor(request, workflow.workspaceId).role !== "owner")
       return reply.status(403).send({ error: "Owner role required." });
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() });
-    workflow.policy = parsed.data;
-    return workflow;
+    return store.updateWorkflowPolicy(workflow.id, parsed.data);
   });
 
   app.post("/webhooks/:provider", { config: { rawBody: true } }, async (request, reply) => {
