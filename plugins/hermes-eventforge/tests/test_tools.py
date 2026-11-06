@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from support import FakeClient, client, commands, make_plane, runtime, settings_mod, tools
 from support import bundle as bundle_mod
@@ -324,7 +327,7 @@ class ToolProxyTest(unittest.TestCase):
         self.assertNotIn("catalog install", str(caught.exception))
 
     def test_stderr_log_rotates_and_is_not_a_pipe(self):
-        node = __import__("shutil").which("node")
+        node = shutil.which("node")
         if not node:
             self.skipTest("node is not on PATH")
         with tempfile.TemporaryDirectory() as tmp:
@@ -340,6 +343,168 @@ class ToolProxyTest(unittest.TestCase):
             self.assertIsNone(process.stderr)
             process.wait(timeout=5)
             self.assertIn("bundle-said-hello", bundle_mod._stderr_tail(process))
+
+    def test_child_environment_keeps_node_and_eventforge_and_drops_secrets(self):
+        source = {
+            "PATH": "/usr/bin",
+            "HOME": "/home/hermes",
+            "NODE_ENV": "production",
+            "NODE_PATH": "/opt/node_modules",
+            "NODE_OPTIONS": "--max-old-space-size=256",
+            "EVENTFORGE_API_URL": "http://127.0.0.1:4310",
+            "EVENTFORGE_RUNNER": "demo",
+            "EVENTFORGE_DEMO_MODE": "true",
+            "EVENTFORGE_CODEX_WORKDIR": "/work",
+            "EVENTFORGE_API_TOKEN": "from-parent",
+            "OPENAI_API_KEY": "openai-key",
+            "ANTHROPIC_API_KEY": "anthropic-key",
+            "GITHUB_TOKEN": "github-token",
+            "CLOUDFLARE_API_TOKEN": "cf-token",
+            "DATABASE_URL": "postgres://local/db",
+            "HERMES_API_KEY": "hermes-key",
+            "AWS_SECRET_ACCESS_KEY": "aws-secret",
+            "NODE": "not-a-node-var",
+            "EVENTFORGE": "not-a-prefix",
+            "MY_NODE_ENV": "nope",
+        }
+        original = settings_mod.get_secret
+
+        def lookup(name, default=""):
+            if name == settings_mod.TOKEN_NAME:
+                return "from-secret"
+            return default
+
+        settings_mod.get_secret = lookup
+        try:
+            env = bundle_mod._child_environment(source)
+        finally:
+            settings_mod.get_secret = original
+        self.assertEqual(
+            env,
+            {
+                "PATH": "/usr/bin",
+                "HOME": "/home/hermes",
+                "NODE_ENV": "production",
+                "NODE_PATH": "/opt/node_modules",
+                "NODE_OPTIONS": "--max-old-space-size=256",
+                "EVENTFORGE_API_URL": "http://127.0.0.1:4310",
+                "EVENTFORGE_RUNNER": "demo",
+                "EVENTFORGE_DEMO_MODE": "true",
+                "EVENTFORGE_CODEX_WORKDIR": "/work",
+                "EVENTFORGE_API_TOKEN": "from-secret",
+            },
+        )
+        self.assertEqual(source["EVENTFORGE_API_TOKEN"], "from-parent")
+
+    def test_empty_secret_does_not_keep_the_parent_token(self):
+        original = settings_mod.get_secret
+        settings_mod.get_secret = None
+        try:
+            env = bundle_mod._child_environment(
+                {
+                    "PATH": "",
+                    "HOME": "/home/hermes",
+                    "EVENTFORGE_API_TOKEN": "from-parent",
+                    "OPENAI_API_KEY": "openai-key",
+                }
+            )
+        finally:
+            settings_mod.get_secret = original
+        self.assertEqual(env, {"HOME": "/home/hermes"})
+
+    def test_secret_read_failure_does_not_include_the_token(self):
+        original = settings_mod.get_secret
+
+        def broken(name, default=""):
+            del name, default
+            raise RuntimeError("secret backend unavailable")
+
+        settings_mod.get_secret = broken
+        try:
+            with self.assertRaises(client.ControlPlaneError) as caught:
+                bundle_mod._child_environment({"EVENTFORGE_API_TOKEN": "from-parent"})
+        finally:
+            settings_mod.get_secret = original
+        self.assertNotIn("from-parent", str(caught.exception))
+        self.assertNotIn("secret backend", str(caught.exception))
+
+    def test_spawn_passes_the_minimal_environment_and_hides_the_token(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not on PATH")
+        original = settings_mod.get_secret
+
+        def lookup(name, default=""):
+            if name == settings_mod.TOKEN_NAME:
+                return "from-secret"
+            return default
+
+        settings_mod.get_secret = lookup
+        poisoned = {
+            "OPENAI_API_KEY": "openai-key",
+            "ANTHROPIC_API_KEY": "anthropic-key",
+            "GITHUB_TOKEN": "github-token",
+            "GH_TOKEN": "github-token",
+            "CLOUDFLARE_API_TOKEN": "cf-token",
+            "DATABASE_URL": "postgres://local/db",
+            "AWS_SECRET_ACCESS_KEY": "aws-secret",
+            "HERMES_API_KEY": "hermes-key",
+            "EVENTFORGE_API_TOKEN": "from-parent",
+            "EVENTFORGE_API_URL": "http://127.0.0.1:4310",
+            "EVENTFORGE_RUNNER": "demo",
+            "NODE_ENV": "production",
+            "NODE_PATH": "/tmp/node_modules",
+            "HOME": os.environ.get("HOME") or "/tmp",
+        }
+        script = (
+            "const keys = Object.keys(process.env).sort();\n"
+            "const token = process.env.EVENTFORGE_API_TOKEN || '';\n"
+            "process.stderr.write(JSON.stringify({\n"
+            "  keys,\n"
+            "  tokenIsSecret: token === 'from-secret',\n"
+            "  tokenIsParent: token === 'from-parent',\n"
+            "}) + '\\n');\n"
+        )
+        try:
+            with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, poisoned, clear=False):
+                directory = Path(tmp)
+                bundle = directory / "eventforge-standalone.cjs"
+                bundle.write_text(script, encoding="utf-8")
+                process = bundle_mod._spawn(str(bundle), directory)
+                self.assertEqual(list(process.args), [node, str(bundle)])
+                self.assertNotIn("from-secret", process.args)
+                self.assertNotIn("from-parent", process.args)
+                process.wait(timeout=5)
+                log = (directory / "bundle-stderr.log").read_text(encoding="utf-8")
+                report = json.loads(log.strip().splitlines()[-1])
+        finally:
+            settings_mod.get_secret = original
+        keys = set(report["keys"])
+        self.assertTrue(report["tokenIsSecret"])
+        self.assertFalse(report["tokenIsParent"])
+        for name in (
+            "PATH",
+            "HOME",
+            "NODE_ENV",
+            "NODE_PATH",
+            "EVENTFORGE_API_URL",
+            "EVENTFORGE_RUNNER",
+            "EVENTFORGE_API_TOKEN",
+        ):
+            self.assertIn(name, keys)
+        for name in (
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+            "CLOUDFLARE_API_TOKEN",
+            "DATABASE_URL",
+            "AWS_SECRET_ACCESS_KEY",
+            "HERMES_API_KEY",
+        ):
+            self.assertNotIn(name, keys)
+        self.assertNotIn("from-secret", log)
+        self.assertNotIn("from-parent", log)
 
     def test_false_string_does_not_enable_auto_start(self):
         disabled = settings_mod.load_settings(_Config({"auto_start": "false"}), fail_closed=True)

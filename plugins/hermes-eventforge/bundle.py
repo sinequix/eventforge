@@ -7,13 +7,16 @@ downloads a replacement and never invokes ``npx``.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 from .client import ControlPlaneClient, ControlPlaneError, is_loopback
+from .settings import TOKEN_NAME, read_api_token
 
 try:
     from plugins.plugin_storage import plugin_data_dir
@@ -24,6 +27,11 @@ BUNDLE_FILENAME = "eventforge-standalone.cjs"
 CATALOG_BUNDLE_MESSAGE = (
     "catalog install: set bundle_path or run the EventForge control plane yourself"
 )
+# Exact names copied from the parent. Everything else stays there.
+_FORWARDED_EXACT = frozenset({"PATH", "HOME"})
+# Node's own runtime variables, plus EventForge plane settings. The API token
+# is not part of this copy; it is added from Hermes get_secret.
+_FORWARDED_PREFIXES = ("NODE_", "EVENTFORGE_")
 STDERR_CAP = 256 * 1024
 _STDERR_TAIL = 500
 _lock = threading.Lock()
@@ -148,6 +156,31 @@ def _stderr_directory(explicit: Path | None) -> Path:
     return fallback
 
 
+def _child_environment(source: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Environment for ``eventforge-standalone.cjs``.
+
+    The child does not inherit the Hermes process. It receives ``PATH`` and
+    ``HOME`` when they are set, every ``NODE_*`` variable (``NODE_PATH``,
+    ``NODE_ENV``, and the rest of Node's runtime family), and every
+    ``EVENTFORGE_*`` variable except the API token. ``EVENTFORGE_API_TOKEN``
+    is set only from Hermes ``get_secret``, and only when that value is
+    non-empty. Provider keys and other parent config are left out. Callers
+    must not log the returned mapping: it may contain the token.
+    """
+
+    current = os.environ if source is None else source
+    env: dict[str, str] = {}
+    for key, value in current.items():
+        if not value or key == TOKEN_NAME:
+            continue
+        if key in _FORWARDED_EXACT or key.startswith(_FORWARDED_PREFIXES):
+            env[key] = value
+    token = read_api_token()
+    if token:
+        env[TOKEN_NAME] = token
+    return env
+
+
 def _spawn(configured: str, stderr_dir: Path | None) -> subprocess.Popen[bytes]:
     bundle = resolve_bundle(configured)
     node = shutil.which("node")
@@ -156,17 +189,19 @@ def _spawn(configured: str, stderr_dir: Path | None) -> subprocess.Popen[bytes]:
             "node was not found on PATH. The EventForge bundle needs Node.js 20.11 or newer. "
             "Nothing was downloaded."
         )
+    env = _child_environment()
     log_path = prepare_stderr_log(_stderr_directory(stderr_dir))
     handle = open(log_path, "ab")
     try:
         # stdin stays open: the bundle stops its embedded plane when stdin closes.
         # stderr is a file, not a pipe, so a chatty child cannot fill a buffer and block.
-        # env is inherited so this process does not copy or rewrite secrets.
+        # env is the allowlist from _child_environment, never os.environ itself.
         process = subprocess.Popen(
             [node, str(bundle)],
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=handle,
+            env=env,
         )
     except OSError as exc:
         raise ControlPlaneError(f"Could not start the EventForge bundle: {exc}") from exc
