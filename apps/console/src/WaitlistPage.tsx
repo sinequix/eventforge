@@ -7,6 +7,11 @@ type SubmissionState = "idle" | "submitting" | "success" | "error";
 const WAITLIST_API_URL =
   import.meta.env.VITE_WAITLIST_API_URL?.trim() || "https://api.eventforge.dev/v1/waitlist";
 
+function isValidWaitlistEmail(value: string): boolean {
+  const email = value.trim().toLowerCase();
+  return email.length > 0 && email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 export function WaitlistForm({ source, idPrefix }: { source: string; idPrefix: string }) {
   const [state, setState] = useState<SubmissionState>("idle");
   const [message, setMessage] = useState("");
@@ -14,24 +19,39 @@ export function WaitlistForm({ source, idPrefix }: { source: string; idPrefix: s
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const email = String(form.get("email") ?? "").trim();
     const consent = form.get("consent") === "on";
     const website = String(form.get("website") ?? "");
+    if (!isValidWaitlistEmail(email) || !consent) {
+      setState("error");
+      setMessage(
+        !isValidWaitlistEmail(email)
+          ? "Enter a valid email address."
+          : "Consent is required to join the waitlist.",
+      );
+      return;
+    }
     captureEvent("waitlist_submit_started", { source });
     setState("submitting");
     setMessage("");
+    let status: number | undefined;
+    let code: string | undefined;
     try {
       const response = await fetch(WAITLIST_API_URL, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, consent, website, source }),
       });
+      status = response.status;
       const body = (await response.json().catch(() => ({}))) as {
         accepted?: boolean;
         detail?: string;
         alreadyRegistered?: boolean;
+        code?: string;
       };
+      if (typeof body.code === "string" && body.code) code = body.code;
       if (!response.ok || !body.accepted)
         throw new Error(body.detail || "The waitlist is unavailable.");
       setState("success");
@@ -41,18 +61,22 @@ export function WaitlistForm({ source, idPrefix }: { source: string; idPrefix: s
           : "You are on the list. We will send the next useful update, not a noisy newsletter.",
       );
       captureEvent("waitlist_submitted", { already_registered: body.alreadyRegistered === true });
-      event.currentTarget.reset();
+      formElement.reset();
     } catch (error) {
+      const failure =
+        error instanceof Error ? error.message : "The waitlist is unavailable. Try again soon.";
       setState("error");
-      setMessage(
-        error instanceof Error ? error.message : "The waitlist is unavailable. Try again soon.",
-      );
-      captureEvent("waitlist_submit_failed");
+      setMessage(failure);
+      captureEvent("waitlist_submit_failed", {
+        error: failure,
+        ...(status !== undefined ? { status } : {}),
+        ...(code ? { code } : {}),
+      });
     }
   };
 
   return (
-    <form className="ef-waitlist-form" onSubmit={submit} noValidate>
+    <form className="ef-waitlist-form" onSubmit={submit}>
       <label htmlFor={emailId}>Work email</label>
       <input
         id={emailId}
