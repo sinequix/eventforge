@@ -11,6 +11,7 @@ const analyticsSources = [
   "https://*.googletagmanager.com",
   "https://static.cloudflareinsights.com",
   "https://cloudflareinsights.com",
+  "https://analytics.ahrefs.com",
 ];
 
 describe("console content security policies", () => {
