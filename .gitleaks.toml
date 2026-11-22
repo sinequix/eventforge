@@ -31,3 +31,12 @@ paths = [
   '''apps/console/public/analytics-config\.json''',
   '''apps/console/dist/analytics-config\.json''',
 ]
+
+[[rules.allowlists]]
+description = "Public Ahrefs Web Analytics data-key (required in the document head for the Ahrefs crawler)"
+condition = "AND"
+regexTarget = "line"
+regexes = ['''data-key="Tx2cmkaEeIcHdmDK4\+P9Pw"''']
+paths = [
+  '''apps/console/index.html''',
+]
